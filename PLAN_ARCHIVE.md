@@ -64,3 +64,14 @@
 - [x] 4.6 - Repair loop: detect breakage, re-ground, patch record with reviewable diff. repair_verb in the (still burn-free) executor: run -> break_scene (labels + png captured at the failing step, THIS page not a fresh load) -> rank step intent over live a11y labels -> patch selector + evidence -> demote to Candidate -> verify-run. e2e: typo'd selector self-heals from intent, verified Passed. Dead elements stay Unrepairable — re-grounding can't resurrect what re-authoring must
 
 
+---
+
+## 2026-07-23
+
+## Phase 5 - Generation + end-to-end
+- [x] 5.1 - Crawler: walk a corpus app, propose task-level candidate verbs with scoped intents. verbivore-generator: container-aware page_map (ax parent_id walk to form/nav/dialog ancestors), pure propose() rules — NAMED forms become one task verb (type fields + submit click, container intents throughout), nav-container links become open-X, standalone buttons press-X; unnamed/whitespace-named forms and content-link soup skipped (candidate spam wastes review attention). Same-host BFS, logout/delete deny list, never clicks. Live: 9 candidates from 8 gitea pages
+- [x] 5.2 - Candidate review + accept flow (status flip on the record). review_and_accept in executor: a candidate earns Accepted by RUNNING — Passed flips status, breakage rejects with the typed reason and status stays. accept-verb + list-verbs CLI
+- [x] 5.3 - generate-verb CLI: intent phrase to accepted verb record. rank over live page_map -> selector snap -> candidate -> optional immediate review (--accept). Live on gitea: "the search button" grounded, accepted
+- [x] 5.4 - End-to-end: generated verb runs deterministically, sabotage self-reports. full_loop e2e on the fixture: crawl -> review accepts press-toggle-details, REJECTS press-do-nothing as EffectSilence{step:0} (the self-report), accepted verb re-runs Passed. Real-app pass on gitea: crawl -> accept -> run-verb with the trained gate judging (visual 1.0 + navigated)
+- [x] 5.5 - README + verb-format doc, sweep phase to archive. README: the loop diagram, measured-numbers section (detector's weakness stated plainly), try-it commands, crate map. docs/verb-format.md: the WHY per field — status lifecycle, three-address targets, asymmetric expect gate, provenance-as-string schema guard, variants-as-environment. SPEC end-to-end criterion marked MET
+
