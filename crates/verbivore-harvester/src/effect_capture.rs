@@ -80,12 +80,12 @@ pub(crate) async fn arm(page: &Page) -> Result<()> {
     Ok(())
 }
 
-/// Clicks at viewport css-px coordinates and captures the pair. `settle_ms` is
-/// a fixed wait for v1 — replacing it with the effect model IS phase 3's plot.
+/// Captures a pair around an optional click (None = no-action control pair).
+/// `settle_ms` is a fixed wait for v1 — replacing it with the effect model IS
+/// phase 3's plot.
 pub(crate) async fn click_and_capture(
     page: &Page,
-    x: f64,
-    y: f64,
+    click: Option<(f64, f64)>,
     settle_ms: u64,
 ) -> Result<ActionPair> {
     // Control window first: same duration, no action. Whatever fires here is
@@ -94,14 +94,16 @@ pub(crate) async fn click_and_capture(
     let ambient = read_signals(page).await?;
 
     let before_png = shot(page).await?;
-    for kind in [
-        DispatchMouseEventType::MousePressed,
-        DispatchMouseEventType::MouseReleased,
-    ] {
-        let mut params = DispatchMouseEventParams::new(kind, x, y);
-        params.button = Some(MouseButton::Left);
-        params.click_count = Some(1);
-        page.execute(params).await?;
+    if let Some((x, y)) = click {
+        for kind in [
+            DispatchMouseEventType::MousePressed,
+            DispatchMouseEventType::MouseReleased,
+        ] {
+            let mut params = DispatchMouseEventParams::new(kind, x, y);
+            params.button = Some(MouseButton::Left);
+            params.click_count = Some(1);
+            page.execute(params).await?;
+        }
     }
     tokio::time::sleep(std::time::Duration::from_millis(settle_ms)).await;
     let after_png = shot(page).await?;

@@ -39,7 +39,7 @@ This PLAN.md is driven by `claude-plan-bridge` (FORMATv2):
 ## Phase 3 - Effect validation
 - [x] 3.1 - Before/after pair capture around CDP actions
 - [x] 3.2 - CDP-signal labeler: DOM mutations, network activity, aria flips
-- [ ] 3.3 - Negative pairs: dead-area clicks + no-action ambient-animation frames
+- [x] 3.3 - Negative pairs: dead-area clicks + no-action ambient-animation frames
 - [ ] 3.4 - SSIM-threshold baseline, tuned + measured (the bar to beat)
 - [ ] 3.5 - Spike: siamese distance vs change-region head, pick one
 - [ ] 3.6 - Train pair model, eval vs 95% catch / 5% false-alarm gates and the baseline

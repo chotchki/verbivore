@@ -242,12 +242,13 @@ impl Harvester {
         })
     }
 
-    /// Loads a page at the default rendering, clicks at viewport css px, and
-    /// captures the before/after pair with its CDP ground-truth signals.
+    /// Loads a page at the default rendering, optionally clicks at viewport
+    /// css px, and captures the before/after pair with its CDP ground truth.
+    /// `click: None` captures a no-action control (ambient noise pair).
     pub async fn capture_action_pair(
         &self,
         url: &str,
-        click_at: (f64, f64),
+        click: Option<(f64, f64)>,
         settle_ms: u64,
     ) -> Result<ActionPair> {
         let page = self.browser.new_page("about:blank").await?;
@@ -264,9 +265,76 @@ impl Harvester {
         page.goto(url).await?;
         page.wait_for_navigation().await?;
         effect_capture::arm(&page).await?;
-        let pair = effect_capture::click_and_capture(&page, click_at.0, click_at.1, settle_ms).await?;
+        let pair = effect_capture::click_and_capture(&page, click, settle_ms).await?;
         page.close().await?;
         Ok(pair)
+    }
+
+    /// The pair-harvest driver: element-center clicks (up to `max_elements`),
+    /// dead-area clicks (up to `dead_points`, grid-scanned outside every bbox)
+    /// and one no-action control. Each capture gets a fresh page — clicks
+    /// navigate, mutate, whatever they honestly do.
+    pub async fn harvest_pairs(
+        &self,
+        pairs: &verbivore_dataset::PairDataset,
+        url: &str,
+        max_elements: usize,
+        dead_points: usize,
+        settle_ms: u64,
+    ) -> Result<SweepOutcome> {
+        let snap = self.snapshot(url).await?;
+        let mut outcome = SweepOutcome::default();
+
+        let mut clicks: Vec<Option<(f64, f64)>> = snap
+            .labels
+            .iter()
+            .take(max_elements)
+            .map(|l| Some((l.bbox.x + l.bbox.w / 2.0, l.bbox.y + l.bbox.h / 2.0)))
+            .collect();
+        // Dead candidates: a coarse grid, keeping points clear of every bbox.
+        let mut found = 0usize;
+        'grid: for fy in [0.9, 0.7, 0.5, 0.3] {
+            for fx in [0.9, 0.7, 0.5, 0.3] {
+                let (px, py) = (VIEWPORT_W as f64 * fx, VIEWPORT_H as f64 * fy);
+                const MARGIN: f64 = 6.0;
+                let clear = !snap.labels.iter().any(|l| {
+                    px >= l.bbox.x - MARGIN
+                        && px <= l.bbox.x + l.bbox.w + MARGIN
+                        && py >= l.bbox.y - MARGIN
+                        && py <= l.bbox.y + l.bbox.h + MARGIN
+                });
+                if clear {
+                    clicks.push(Some((px, py)));
+                    found += 1;
+                    if found == dead_points {
+                        break 'grid;
+                    }
+                }
+            }
+        }
+        clicks.push(None); // the no-action control
+
+        for click in clicks {
+            let pair = self.capture_action_pair(url, click, settle_ms).await?;
+            let added = pairs.add(
+                url,
+                click,
+                VIEWPORT_W,
+                VIEWPORT_H,
+                1.0,
+                settle_ms,
+                pair.signals,
+                pair.ambient,
+                &pair.before_png,
+                &pair.after_png,
+            )?;
+            if added.deduped {
+                outcome.deduped += 1;
+            } else {
+                outcome.added += 1;
+            }
+        }
+        Ok(outcome)
     }
 
     /// Shuts the browser down; dropping without this leaks a Chrome process.

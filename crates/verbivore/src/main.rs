@@ -26,6 +26,23 @@ enum Cmd {
         /// Pages to harvest
         urls: Vec<String>,
     },
+    /// Capture effect pairs: element clicks, dead clicks and a no-action
+    /// control per url, labeled from CDP signals
+    HarvestPairs {
+        /// Pair dataset root to create or extend
+        #[arg(long)]
+        pairs: PathBuf,
+        /// Element clicks per page
+        #[arg(long, default_value_t = 5)]
+        max_elements: usize,
+        /// Dead-area clicks per page
+        #[arg(long, default_value_t = 2)]
+        dead: usize,
+        /// Settle window in ms (also the ambient control window)
+        #[arg(long, default_value_t = 400)]
+        settle_ms: u64,
+        urls: Vec<String>,
+    },
     /// Split a dataset into per-host datasets under an output root
     DatasetSplit {
         src: PathBuf,
@@ -57,6 +74,23 @@ async fn main() -> Result<()> {
             }
             harvester.close().await?;
             print!("{}", ds.stats()?);
+        }
+        Cmd::HarvestPairs {
+            pairs,
+            max_elements,
+            dead,
+            settle_ms,
+            urls,
+        } => {
+            let ds = verbivore_dataset::PairDataset::create(pairs)?;
+            let harvester = Harvester::launch().await?;
+            for url in &urls {
+                let outcome = harvester
+                    .harvest_pairs(&ds, url, max_elements, dead, settle_ms)
+                    .await?;
+                println!("{url}: {} added, {} deduped", outcome.added, outcome.deduped);
+            }
+            harvester.close().await?;
         }
         Cmd::DatasetSplit { src, out_root } => {
             let src_ds = Dataset::open(&src)?;

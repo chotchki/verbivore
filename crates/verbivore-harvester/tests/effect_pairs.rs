@@ -13,7 +13,7 @@ const FIXTURE: &str = "data:text/html,<html><body style=\"margin:0\">\
 async fn real_click_yields_mutations_and_pixel_change() -> anyhow::Result<()> {
     let harvester = Harvester::launch().await?;
     let pair = harvester
-        .capture_action_pair(FIXTURE, (150.0, 120.0), 400)
+        .capture_action_pair(FIXTURE, Some((150.0, 120.0)), 400)
         .await?;
     harvester.close().await?;
 
@@ -30,7 +30,7 @@ async fn real_click_yields_mutations_and_pixel_change() -> anyhow::Result<()> {
 async fn dead_click_yields_silence() -> anyhow::Result<()> {
     let harvester = Harvester::launch().await?;
     let pair = harvester
-        .capture_action_pair(FIXTURE, (500.0, 500.0), 400)
+        .capture_action_pair(FIXTURE, Some((500.0, 500.0)), 400)
         .await?;
     harvester.close().await?;
 
@@ -47,7 +47,7 @@ async fn dead_click_yields_silence() -> anyhow::Result<()> {
 async fn network_only_click_is_visible_to_signals() -> anyhow::Result<()> {
     let harvester = Harvester::launch().await?;
     let pair = harvester
-        .capture_action_pair(FIXTURE, (350.0, 120.0), 400)
+        .capture_action_pair(FIXTURE, Some((350.0, 120.0)), 400)
         .await?;
     harvester.close().await?;
 
@@ -56,5 +56,37 @@ async fn network_only_click_is_visible_to_signals() -> anyhow::Result<()> {
         "fetch must appear in the resource timeline: {:?}",
         pair.signals
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn harvest_pairs_produces_labeled_mix() -> anyhow::Result<()> {
+    use verbivore_dataset::{EffectLabel, PairDataset};
+
+    let dir = tempfile::tempdir()?;
+    let pairs = PairDataset::create(dir.path())?;
+    let harvester = Harvester::launch().await?;
+    let outcome = harvester.harvest_pairs(&pairs, FIXTURE, 2, 2, 300).await?;
+    harvester.close().await?;
+
+    // 2 element clicks + 2 dead clicks + 1 no-action control.
+    assert_eq!(outcome.added, 5, "expected 5 fresh pairs");
+
+    let mut changed = 0;
+    let mut unchanged = 0;
+    let mut controls = 0;
+    for id in pairs.pair_ids()? {
+        let meta = pairs.meta(&id)?;
+        match meta.label {
+            EffectLabel::Changed => changed += 1,
+            EffectLabel::NoChange => unchanged += 1,
+        }
+        if meta.click.is_none() {
+            controls += 1;
+        }
+    }
+    assert!(changed >= 2, "both real buttons must label Changed");
+    assert!(unchanged >= 3, "dead clicks + control must label NoChange");
+    assert_eq!(controls, 1, "exactly one no-action control");
     Ok(())
 }

@@ -117,7 +117,9 @@ pub fn label_from_signals(action_delta: &EffectSignals) -> EffectLabel {
 pub struct PairMeta {
     pub id: String,
     pub url: String,
-    pub click: (f64, f64),
+    /// None = a no-action control pair: time passed, nobody clicked. Those are
+    /// NoChange by construction — ambient animation must read as noise.
+    pub click: Option<(f64, f64)>,
     pub viewport_w: i64,
     pub viewport_h: i64,
     pub dpr: f64,
@@ -172,7 +174,7 @@ impl PairDataset {
     pub fn add(
         &self,
         url: &str,
-        click: (f64, f64),
+        click: Option<(f64, f64)>,
         viewport_w: i64,
         viewport_h: i64,
         dpr: f64,
@@ -185,7 +187,10 @@ impl PairDataset {
         let mut hasher = Sha256::new();
         hasher.update(before_png);
         hasher.update(after_png);
-        hasher.update(format!("{:.1},{:.1}", click.0, click.1));
+        match click {
+            Some((x, y)) => hasher.update(format!("{x:.1},{y:.1}")),
+            None => hasher.update("noaction"),
+        }
         let id = hex16(&hasher.finalize());
         let meta_path = self.meta_json_path(&id);
         if meta_path.exists() {
@@ -203,7 +208,10 @@ impl PairDataset {
             settle_ms,
             signals,
             ambient,
-            label: label_from_signals(&signals),
+            label: match click {
+                Some(_) => label_from_signals(&signals),
+                None => EffectLabel::NoChange,
+            },
         };
         fs::write(meta_path, serde_json::to_vec_pretty(&meta)?)?;
         Ok(AddOutcome { id, deduped: false })
@@ -463,17 +471,17 @@ mod tests {
             network_requests: 0,
         };
         let first = ds.add(
-            "http://x/", (10.0, 20.0), 1280, 800, 1.0, 400,
+            "http://x/", Some((10.0, 20.0)), 1280, 800, 1.0, 400,
             signals, EffectSignals::default(), b"before", b"after",
         )?;
         assert!(!first.deduped);
         // Same everything -> dedupe; same images, different click -> new pair.
         assert!(ds.add(
-            "http://x/", (10.0, 20.0), 1280, 800, 1.0, 400,
+            "http://x/", Some((10.0, 20.0)), 1280, 800, 1.0, 400,
             signals, EffectSignals::default(), b"before", b"after",
         )?.deduped);
         assert!(!ds.add(
-            "http://x/", (99.0, 99.0), 1280, 800, 1.0, 400,
+            "http://x/", Some((99.0, 99.0)), 1280, 800, 1.0, 400,
             EffectSignals::default(), EffectSignals::default(), b"before", b"after",
         )?.deduped);
 
