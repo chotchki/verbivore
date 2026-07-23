@@ -31,6 +31,8 @@ This PLAN.md is driven by `claude-plan-bridge` (FORMATv2):
   - [x] 2.7.2 - Ti/WSL2 result: 11.35s/epoch steady, loss parity to 4 digits. DECISION: train on the M3 Max, Ti retires (revisit only with f16 + release if scale demands)
 - [x] 2.8 - Intent phrase to element ranking (classical text match for v1)
 - [ ] 2.9 - Held-out app eval against the 80% top-1 gate
+  - [x] 2.9.1 - Pipeline proven on real data: bias prior tames focal start (49.6 vs 19.7k), loss 4.5 @ 60 epochs; cross-app mAP 0.001 from a 4-layout corpus (honest baseline, matched-IoU 0.62)
+  - [ ] 2.9.2 - Corpus breadth: more pages + at least 2 more apps, retrain, re-eval the gate
 
 ## Phase 3 - Effect validation
 - [ ] 3.1 - Before/after pair capture around CDP actions
@@ -58,6 +60,7 @@ This PLAN.md is driven by `claude-plan-bridge` (FORMATv2):
 
 # Backlog (not yet phased)
 
+- Cache decoded training items in memory: png decode dominates real-data epochs (16.6s vs 3.1s synthetic)
 - Canvas verbs: runtime grounding + coordinate actions for canvas content
 - Public-site harvesting for corpus diversity
 - build.rs typed wrapper fns from accepted verb records
