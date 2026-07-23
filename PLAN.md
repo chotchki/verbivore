@@ -37,7 +37,7 @@ This PLAN.md is driven by `claude-plan-bridge` (FORMATv2):
   - [ ] 2.9.3 - Leave-one-app-out rotation (k-fold at app granularity): k trainings each holding out a different app, report mean mAP + spread — the honest error bar for unseen-app generalization
 
 ## Phase 3 - Effect validation
-- [ ] 3.1 - Before/after pair capture around CDP actions
+- [x] 3.1 - Before/after pair capture around CDP actions
 - [ ] 3.2 - CDP-signal labeler: DOM mutations, network activity, aria flips
 - [ ] 3.3 - Negative pairs: dead-area clicks + no-action ambient-animation frames
 - [ ] 3.4 - SSIM-threshold baseline, tuned + measured (the bar to beat)

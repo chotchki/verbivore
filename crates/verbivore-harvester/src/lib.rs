@@ -1,7 +1,10 @@
 //! Drives Chrome via chromiumoxide to harvest auto-labeled training data: the DOM
 //! provides bounding boxes + roles at capture time so no human ever annotates.
 
+pub mod effect_capture;
 pub mod labels;
+
+pub use effect_capture::{ActionPair, ActionSignals};
 
 use anyhow::{Context, Result, anyhow};
 use chromiumoxide::browser::{Browser, BrowserConfig};
@@ -237,6 +240,33 @@ impl Harvester {
             ax_nodes,
             labels,
         })
+    }
+
+    /// Loads a page at the default rendering, clicks at viewport css px, and
+    /// captures the before/after pair with its CDP ground-truth signals.
+    pub async fn capture_action_pair(
+        &self,
+        url: &str,
+        click_at: (f64, f64),
+        settle_ms: u64,
+    ) -> Result<ActionPair> {
+        let page = self.browser.new_page("about:blank").await?;
+        page.execute(
+            SetDeviceMetricsOverrideParams::builder()
+                .width(VIEWPORT_W)
+                .height(VIEWPORT_H)
+                .device_scale_factor(1.0)
+                .mobile(false)
+                .build()
+                .map_err(|e| anyhow!("device metrics: {e}"))?,
+        )
+        .await?;
+        page.goto(url).await?;
+        page.wait_for_navigation().await?;
+        effect_capture::arm(&page).await?;
+        let pair = effect_capture::click_and_capture(&page, click_at.0, click_at.1, settle_ms).await?;
+        page.close().await?;
+        Ok(pair)
     }
 
     /// Shuts the browser down; dropping without this leaks a Chrome process.
