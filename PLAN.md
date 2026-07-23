@@ -30,6 +30,8 @@ This PLAN.md is driven by `claude-plan-bridge` (FORMATv2):
   - [x] 3.6.2 - Split composition report + train-side ssim (threshold-transfer prerequisite; diagnosis: all ?refresh=5s pages hashed into train, heldout was all-quiet)
   - [x] 3.6.3 - effect-train bin: thresholds tuned on TRAIN and frozen for heldout, checkpoint + threshold sidecar for the phase-4 gate, heldout misclassification dump. FIXTURE VERDICT: ssim oracle ceiling now FAILS gates (0.971/0.065) — baseline officially beatable; diff-stack 1.000/0.065 at 60 epochs, unconverged
   - [ ] 3.6.4 - Harvest fixture pairs into corpus, final gate run vs baseline
+  - [ ] 3.6.5 - Labeler fix: per-node ambient suppression (count-subtraction aliases against periodic tickers — v17's 600ms period == settle window mislabeled dead clicks Changed) + per-url network suppression
+  - [ ] 3.6.6 - Purge corrupted fixture pairs, re-harvest all 30 variants with fixed labeler, retrain + gate verdict
 - [ ] 3.7 - Sabotage harness: dead-pixel click rewiring + noisy animated fixture
 
 ## Phase 4 - Verb records + executor

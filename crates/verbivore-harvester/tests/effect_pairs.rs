@@ -43,6 +43,46 @@ async fn dead_click_yields_silence() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// A ticker whose period EQUALS the settle window: count subtraction aliases
+/// (ambient window catches 1 tick, action window 2) and mislabels dead clicks.
+/// Per-node suppression must stay silent — same node, same mutation kind.
+/// The button touches a node the ticker never does, so it must still count.
+const TICKER_FIXTURE: &str = "data:text/html,<html><body style=\"margin:0\">\
+    <div id=\"tick\">0</div>\
+    <button style=\"position:absolute;left:100px;top:100px;width:100px;height:40px\" \
+      onclick=\"document.body.setAttribute('data-hit','1')\">hit</button>\
+    <script>let n=0;setInterval(()=>{document.getElementById('tick').textContent=String(++n)},400)</script>\
+    </body></html>";
+
+#[tokio::test]
+async fn periodic_ticker_does_not_alias_into_dead_clicks() -> anyhow::Result<()> {
+    let harvester = Harvester::launch().await?;
+    let dead = harvester
+        .capture_action_pair(TICKER_FIXTURE, Some((500.0, 500.0)), 400)
+        .await?;
+    let real = harvester
+        .capture_action_pair(TICKER_FIXTURE, Some((150.0, 120.0)), 400)
+        .await?;
+    harvester.close().await?;
+
+    assert!(
+        dead.ambient.dom_mutations > 0,
+        "ticker must be visible as ambient noise: {:?}",
+        dead.ambient
+    );
+    assert_eq!(
+        dead.signals.dom_mutations, 0,
+        "aliased ticker must not leak into a dead click: {:?}",
+        dead.signals
+    );
+    assert!(
+        real.signals.dom_mutations > 0,
+        "novel-node mutation must survive suppression: {:?}",
+        real.signals
+    );
+    Ok(())
+}
+
 #[tokio::test]
 async fn network_only_click_is_visible_to_signals() -> anyhow::Result<()> {
     let harvester = Harvester::launch().await?;

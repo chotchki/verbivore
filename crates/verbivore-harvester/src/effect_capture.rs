@@ -32,7 +32,11 @@ async fn shot(page: &Page) -> Result<Vec<u8>> {
 pub struct ActionPair {
     pub before_png: Vec<u8>,
     pub after_png: Vec<u8>,
-    /// Activity during the action window, ambient already subtracted.
+    /// Action-window activity on targets the ambient window never touched.
+    /// Suppression is per-(node, mutation-kind) and per request path — NOT
+    /// count subtraction, which aliases against periodic tickers whose period
+    /// is near the settle window (measured: a 600ms ticker under a 600ms
+    /// window mislabeled dead clicks Changed).
     pub signals: ActionSignals,
     /// What the page did on its own in an equal window BEFORE the action —
     /// animations, timers, analytics. The noise floor the label is judged above.
@@ -43,32 +47,80 @@ pub struct ActionPair {
 /// shape the harvester writes.
 pub use verbivore_dataset::EffectSignals as ActionSignals;
 
+// Two-phase observer. Ambient phase: count activity AND remember its targets —
+// (node, kind) pairs for mutations, origin+pathname for requests. Action
+// phase: activity on remembered targets is suppressed; only NOVEL targets
+// count. A click's effect touches nodes the ticker never does. Framework
+// re-renders that rebuild children land as childList on their (remembered)
+// stable parents, so they suppress too. Known hole: noise with a period
+// LONGER than the window never registers as ambient — that's a window-length
+// problem no bookkeeping fixes, and why the runtime gate is signals OR visual.
 const OBSERVER_JS: &str = r#"
-window.__vb = { mutations: 0, aria: 0, requests: 0 };
+window.__vb = {
+    phase: 'ambient',
+    ambient: { mutations: 0, aria: 0, requests: 0 },
+    action: { mutations: 0, aria: 0, requests: 0 },
+    seen: new WeakMap(),
+    seenPaths: new Set(),
+};
+const kindKey = (r) =>
+    r.type === 'attributes' ? r.attributeName : r.type === 'characterData' ? '#text' : '#children';
 new MutationObserver(records => {
-    window.__vb.mutations += records.length;
+    const vb = window.__vb;
     for (const r of records) {
-        if (r.type === 'attributes' && r.attributeName && r.attributeName.startsWith('aria-')) {
-            window.__vb.aria += 1;
+        const key = kindKey(r);
+        const aria = r.type === 'attributes' && key && key.startsWith('aria-');
+        if (vb.phase === 'ambient') {
+            let kinds = vb.seen.get(r.target);
+            if (!kinds) { kinds = new Set(); vb.seen.set(r.target, kinds); }
+            kinds.add(key);
+            vb.ambient.mutations += 1;
+            if (aria) vb.ambient.aria += 1;
+        } else {
+            const kinds = vb.seen.get(r.target);
+            if (kinds && kinds.has(key)) continue;
+            vb.action.mutations += 1;
+            if (aria) vb.action.aria += 1;
         }
     }
 }).observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
 // Count request INTENT, not resource-timing entries: data:/blob:/cached
-// requests dodge the timeline, but a wrapped call can't hide.
+// requests dodge the timeline, but a wrapped call can't hide. Suppression key
+// drops the query so pollers' cache-busters don't defeat it.
+const reqPath = (u) => {
+    try { const p = new URL(u instanceof Request ? u.url : String(u), location.href); return p.origin + p.pathname; }
+    catch (e) { return String(u); }
+};
+const note = (u) => {
+    const vb = window.__vb, path = reqPath(u);
+    if (vb.phase === 'ambient') { vb.seenPaths.add(path); vb.ambient.requests += 1; }
+    else if (!vb.seenPaths.has(path)) { vb.action.requests += 1; }
+};
 const origFetch = window.fetch.bind(window);
-window.fetch = (...args) => { window.__vb.requests += 1; return origFetch(...args); };
+window.fetch = (...args) => { note(args[0]); return origFetch(...args); };
 const origOpen = XMLHttpRequest.prototype.open;
 XMLHttpRequest.prototype.open = function (...args) {
-    window.__vb.requests += 1;
+    note(args[1]);
     return origOpen.apply(this, args);
 };
 'armed'
 "#;
 
-// A missing __vb means the document was replaced under us — navigation.
+// Reads the ambient tallies and flips to the action phase in one evaluate —
+// no gap for a mutation to land uncounted. A missing __vb means the document
+// was replaced under us — navigation.
+const BEGIN_ACTION_JS: &str = r#"
+JSON.stringify((() => {
+    const vb = window.__vb;
+    if (!vb) return { navigated: true };
+    vb.phase = 'action';
+    return { mutations: vb.ambient.mutations, aria: vb.ambient.aria, requests: vb.ambient.requests };
+})())
+"#;
+
 const READ_JS: &str = r#"
 JSON.stringify(window.__vb
-    ? { mutations: window.__vb.mutations, aria: window.__vb.aria, requests: window.__vb.requests }
+    ? { mutations: window.__vb.action.mutations, aria: window.__vb.action.aria, requests: window.__vb.action.requests }
     : { navigated: true })
 "#;
 
@@ -88,9 +140,10 @@ pub(crate) async fn click_and_capture(
     settle_ms: u64,
 ) -> Result<ActionPair> {
     // Control window first: same duration, no action. Whatever fires here is
-    // the page's own noise (animations, timers), not the click's doing.
+    // the page's own noise (animations, timers), not the click's doing — its
+    // targets become the suppression list for the action window.
     tokio::time::sleep(std::time::Duration::from_millis(settle_ms)).await;
-    let ambient = read_signals(page).await?;
+    let ambient = read_signals(page, BEGIN_ACTION_JS).await?;
 
     let before_png = shot(page).await?;
     if let Some((x, y)) = click {
@@ -106,21 +159,16 @@ pub(crate) async fn click_and_capture(
     }
     tokio::time::sleep(std::time::Duration::from_millis(settle_ms)).await;
     let after_png = shot(page).await?;
-    let total = read_signals(page).await?;
+    let action = read_signals(page, READ_JS).await?;
 
-    let signals = if total.navigated {
+    let signals = if action.navigated {
         // Counters died with the old document; navigation IS the signal.
         ActionSignals {
             navigated: true,
             ..Default::default()
         }
     } else {
-        ActionSignals {
-            dom_mutations: total.dom_mutations.saturating_sub(ambient.dom_mutations),
-            aria_mutations: total.aria_mutations.saturating_sub(ambient.aria_mutations),
-            network_requests: total.network_requests.saturating_sub(ambient.network_requests),
-            navigated: false,
-        }
+        action // already ambient-suppressed page-side
     };
     Ok(ActionPair {
         before_png,
@@ -130,8 +178,8 @@ pub(crate) async fn click_and_capture(
     })
 }
 
-async fn read_signals(page: &Page) -> Result<ActionSignals> {
-    let raw: String = page.evaluate(READ_JS).await?.into_value()?;
+async fn read_signals(page: &Page, js: &str) -> Result<ActionSignals> {
+    let raw: String = page.evaluate(js).await?.into_value()?;
     let counts: serde_json::Value = serde_json::from_str(&raw)?;
     let get = |k: &str| counts.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
     Ok(ActionSignals {
