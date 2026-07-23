@@ -1,0 +1,32 @@
+{
+  "title": "Verbivore Demo",
+  "uid": "verbivore-demo",
+  "schemaVersion": 39,
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Random Walk",
+      "type": "timeseries",
+      "datasource": { "type": "testdata" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [{ "refId": "A", "scenarioId": "random_walk" }]
+    },
+    {
+      "id": 2,
+      "title": "CSV Values",
+      "type": "stat",
+      "datasource": { "type": "testdata" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [{ "refId": "A", "scenarioId": "csv_metric_values", "stringInput": "42,17,3" }]
+    },
+    {
+      "id": 3,
+      "title": "Gauge",
+      "type": "gauge",
+      "datasource": { "type": "testdata" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "targets": [{ "refId": "A", "scenarioId": "random_walk" }]
+    }
+  ]
+}
