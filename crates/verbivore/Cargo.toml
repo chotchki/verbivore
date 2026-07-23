@@ -1,0 +1,9 @@
+[package]
+name = "verbivore"
+description = "Vision-assisted verbs for browser testing: crawl a site, digest it into verbs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]

@@ -1,0 +1,9 @@
+[package]
+name = "verbivore-harvester"
+description = "Drives Chrome via CDP to harvest DOM-labeled screenshots into training data"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]

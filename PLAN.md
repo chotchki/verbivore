@@ -20,7 +20,7 @@ This PLAN.md is driven by `claude-plan-bridge` (FORMATv2):
 -->
 
 ## Phase 1 - Harvester + corpus
-- [ ] 1.1 - Cargo workspace + crate layout (harvester, dataset, grounding, effect, executor, cli)
+- [x] 1.1 - Cargo workspace + crate layout (harvester, dataset, grounding, effect, executor, cli)
 - [ ] 1.2 - chromiumoxide spike: launch, navigate, screenshot, DOM + a11y tree extraction
 - [ ] 1.3 - Containerized corpus: Grafana + Gitea with seeded state
 - [ ] 1.4 - Label extraction: interactive elements to bbox + role + accessible name (DPR, scroll offsets, occlusion filtering)

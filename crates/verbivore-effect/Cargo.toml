@@ -1,0 +1,9 @@
+[package]
+name = "verbivore-effect"
+description = "Effect validation: did the action visually change the page, or was it a dead click?"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
