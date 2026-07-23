@@ -6,7 +6,7 @@
 use std::collections::HashSet;
 
 use anyhow::Result;
-use verbivore_harvester::{Harvester, Variation};
+use verbivore_harvester::{Harvester, LabeledElement, Variation};
 use verbivore_verb::VerbStore;
 
 use crate::propose::{ProposalContext, propose};
@@ -17,6 +17,63 @@ pub struct CrawlReport {
     /// Ids that already existed in the store — accepted or previously
     /// reviewed records are never clobbered by a re-crawl.
     pub skipped_existing: usize,
+    /// True when element novelty dried up before the page budget did.
+    pub saturated: bool,
+}
+
+/// Element-novelty saturation: the STOPPING rule (selection belongs to the
+/// farthest-first frontier; each mechanism does what it's good at). Url
+/// distance can't detect sameness — /wiki/A and /wiki/B keep a constant
+/// leaf-segment distance forever — but their element POPULATIONS are nearly
+/// identical, which is chris's actual signal: are we still capturing new
+/// elements? Template key = (role, container role, height bucket): names
+/// and widths vary with content, heights are line-height-quantized and
+/// characterize the control type.
+pub struct NoveltyGauge {
+    seen: HashSet<(String, Option<String>, i64)>,
+    dry_streak: usize,
+}
+
+/// Consecutive zero-novelty pages before the walk calls itself done. The
+/// page budget stays as the hard ceiling above this.
+const SATURATION_PATIENCE: usize = 3;
+const HEIGHT_BUCKET_PX: f64 = 16.0;
+
+impl NoveltyGauge {
+    pub fn new() -> Self {
+        Self { seen: HashSet::new(), dry_streak: 0 }
+    }
+
+    /// Records a page's elements; returns how many were novel templates.
+    pub fn observe(&mut self, elements: &[LabeledElement]) -> usize {
+        let mut novel = 0;
+        for e in elements {
+            let key = (
+                e.label.role.clone(),
+                e.container.as_ref().map(|c| c.role.clone()),
+                (e.label.bbox.h / HEIGHT_BUCKET_PX).round() as i64,
+            );
+            if self.seen.insert(key) {
+                novel += 1;
+            }
+        }
+        if novel == 0 {
+            self.dry_streak += 1;
+        } else {
+            self.dry_streak = 0;
+        }
+        novel
+    }
+
+    pub fn saturated(&self) -> bool {
+        self.dry_streak >= SATURATION_PATIENCE
+    }
+}
+
+impl Default for NoveltyGauge {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 pub const DEFAULT_DENY: &[&str] = &["logout", "signout", "sign_out", "delete", "destroy", "remove"];
@@ -56,7 +113,7 @@ const MAX_PATH_DEPTH: usize = 8;
 /// page of coverage lost.
 const SKIP_EXTENSIONS: &[&str] = &[
     ".css", ".js", ".json", ".xml", ".txt", ".pdf", ".zip", ".png", ".jpg", ".jpeg", ".gif",
-    ".svg", ".ico", ".webp", ".woff", ".woff2", ".rss", ".atom",
+    ".svg", ".ico", ".webp", ".woff", ".woff2", ".rss", ".atom", ".md",
 ];
 /// Machine endpoints that render no document (measured leaks: mediawiki's
 /// api.php atom feed hides its format in a query VALUE, gitea's /api/swagger).
@@ -209,11 +266,17 @@ pub async fn crawl(
     deny: &[String],
 ) -> Result<CrawlReport> {
     let variation = Variation::default();
-    let mut report = CrawlReport { pages: 0, proposed: 0, skipped_existing: 0 };
+    let mut report =
+        CrawlReport { pages: 0, proposed: 0, skipped_existing: 0, saturated: false };
     let mut frontier = Frontier::new(start_url, deny, max_pages);
+    let mut gauge = NoveltyGauge::new();
 
     while let Some(url) = frontier.next() {
         if report.pages >= max_pages {
+            break;
+        }
+        if gauge.saturated() {
+            report.saturated = true;
             break;
         }
         let page = match harvester.open_page(&url, &variation).await {
@@ -226,6 +289,7 @@ pub async fn crawl(
         report.pages += 1;
 
         let elements = harvester.page_map(&page, &variation).await?;
+        gauge.observe(&elements);
         let created_at = crate::now_iso();
         let ctx = ProposalContext {
             app,
@@ -272,8 +336,13 @@ pub async fn discover(
     let variation = Variation::default();
     let mut visited: Vec<String> = Vec::new();
     let mut frontier = Frontier::new(start_url, deny, max_pages);
+    let mut gauge = NoveltyGauge::new();
     while let Some(url) = frontier.next() {
         if visited.len() >= max_pages {
+            break;
+        }
+        if gauge.saturated() {
+            eprintln!("discover: element novelty saturated after {} pages", visited.len());
             break;
         }
         let page = match harvester.open_page(&url, &variation).await {
@@ -284,6 +353,8 @@ pub async fn discover(
             }
         };
         visited.push(url.clone());
+        let novel = gauge.observe(&harvester.page_map(&page, &variation).await?);
+        eprintln!("discover: {url} (+{novel} element templates)");
         let hrefs: Vec<String> = page
             .evaluate("[...document.querySelectorAll('a[href]')].map(a => a.href)")
             .await?
@@ -376,5 +447,55 @@ mod tests {
             }
         }
         assert_eq!(admitted, 200, "enqueue cap must hold");
+    }
+}
+
+#[cfg(test)]
+mod gauge_tests {
+    use super::*;
+    use verbivore_dataset::Bbox;
+    use verbivore_harvester::{ContainerInfo, ElementLabel};
+
+    fn el(role: &str, container: Option<&str>, h: f64) -> LabeledElement {
+        LabeledElement {
+            label: ElementLabel {
+                bbox: Bbox { x: 0.0, y: 0.0, w: 100.0, h },
+                role: role.into(),
+                name: Some("varies per page".into()),
+            },
+            container: container.map(|r| ContainerInfo { role: r.into(), name: None }),
+        }
+    }
+
+    #[test]
+    fn template_pages_saturate_and_new_templates_reset() {
+        let mut g = NoveltyGauge::new();
+        // Article template: nav links + body links.
+        let article = vec![el("link", Some("navigation"), 20.0), el("link", None, 20.0)];
+        assert_eq!(g.observe(&article), 2, "first article is all novel");
+        for _ in 0..SATURATION_PATIENCE {
+            assert_eq!(g.observe(&article), 0, "same template, nothing new");
+        }
+        assert!(g.saturated(), "three dry pages = done");
+
+        // A settings page with form controls resets the streak.
+        let mut g = NoveltyGauge::new();
+        g.observe(&vec![el("link", Some("navigation"), 20.0)]);
+        g.observe(&vec![el("link", Some("navigation"), 20.0)]); // dry 1
+        let settings = vec![el("textbox", Some("form"), 36.0), el("button", Some("form"), 36.0)];
+        assert_eq!(g.observe(&settings), 2);
+        assert!(!g.saturated(), "novelty resets the streak");
+    }
+
+    #[test]
+    fn names_and_widths_do_not_fake_novelty() {
+        // Two wiki articles: same layout, different link names/widths.
+        let mut g = NoveltyGauge::new();
+        let a = vec![el("link", None, 20.0)];
+        let mut b = vec![el("link", None, 20.0)];
+        b[0].label.name = Some("totally different name".into());
+        b[0].label.bbox.w = 340.0;
+        g.observe(&a);
+        assert_eq!(g.observe(&b), 0, "content identity is not template novelty");
     }
 }
