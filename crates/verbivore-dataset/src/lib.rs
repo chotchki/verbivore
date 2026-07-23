@@ -18,8 +18,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const FORMAT_VERSION: u32 = 1;
 
-/// Viewport-space bounding box. CSS px == screenshot px (the harvester forces
-/// DPR 1); break that invariant and every label is silently misaligned.
+/// Bounding box in SCREENSHOT pixels (CSS px already scaled by the sample's
+/// dpr); break that invariant and every label is silently misaligned.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Bbox {
     pub x: f64,
@@ -42,8 +42,10 @@ pub struct ElementLabel {
 pub struct SampleMeta {
     pub id: String,
     pub url: String,
+    /// CSS px; the png's pixel dimensions are viewport * dpr.
     pub viewport_w: i64,
     pub viewport_h: i64,
+    pub dpr: f64,
     pub captured_at_unix: u64,
     pub labels: Vec<ElementLabel>,
 }
@@ -103,6 +105,7 @@ impl Dataset {
         url: &str,
         viewport_w: i64,
         viewport_h: i64,
+        dpr: f64,
         labels: Vec<ElementLabel>,
         png: &[u8],
     ) -> Result<AddOutcome> {
@@ -117,6 +120,7 @@ impl Dataset {
             url: url.to_owned(),
             viewport_w,
             viewport_h,
+            dpr,
             captured_at_unix: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_secs())
@@ -215,6 +219,7 @@ mod tests {
             "http://x/",
             1280,
             800,
+            1.0,
             vec![label("button"), label("link")],
             b"fake png bytes",
         )?;
@@ -235,8 +240,8 @@ mod tests {
     fn dedupes_identical_screenshots() -> Result<()> {
         let dir = tempfile::tempdir()?;
         let ds = Dataset::create(dir.path())?;
-        let first = ds.add("http://a/", 1280, 800, vec![label("button")], b"same png")?;
-        let second = ds.add("http://b/", 1280, 800, vec![label("link")], b"same png")?;
+        let first = ds.add("http://a/", 1280, 800, 1.0, vec![label("button")], b"same png")?;
+        let second = ds.add("http://b/", 1280, 800, 1.0, vec![label("link")], b"same png")?;
         assert!(!first.deduped);
         assert!(second.deduped);
         assert_eq!(first.id, second.id);
@@ -266,10 +271,11 @@ mod tests {
             "http://x/",
             1280,
             800,
+            1.0,
             vec![label("button"), label("button"), label("link")],
             b"png one",
         )?;
-        ds.add("http://y/", 1280, 800, vec![label("tab")], b"png two")?;
+        ds.add("http://y/", 1280, 800, 1.0, vec![label("tab")], b"png two")?;
         let stats = ds.stats()?;
         assert_eq!(stats.samples, 2);
         assert_eq!(stats.labels, 4);

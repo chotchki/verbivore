@@ -27,11 +27,14 @@ const INTERACTIVE_ROLES: &[&str] = &[
     "spinbutton",
 ];
 
+/// Candidates and the occlusion hit-test work in CSS px (elementFromPoint's
+/// space); scaling by dpr into screenshot space is the LAST step.
 pub(crate) async fn extract(
     page: &Page,
     nodes: &[AxNode],
     viewport_w: f64,
     viewport_h: f64,
+    dpr: f64,
 ) -> Result<Vec<ElementLabel>> {
     let mut candidates = Vec::new();
     for node in nodes {
@@ -71,7 +74,19 @@ pub(crate) async fn extract(
             name: ax_str(node.name.as_ref()),
         });
     }
-    occlusion_filter(page, candidates).await
+    let visible = occlusion_filter(page, candidates).await?;
+    Ok(visible
+        .into_iter()
+        .map(|mut l| {
+            l.bbox = Bbox {
+                x: l.bbox.x * dpr,
+                y: l.bbox.y * dpr,
+                w: l.bbox.w * dpr,
+                h: l.bbox.h * dpr,
+            };
+            l
+        })
+        .collect())
 }
 
 /// Drops candidates whose center is covered by something outside their own box.

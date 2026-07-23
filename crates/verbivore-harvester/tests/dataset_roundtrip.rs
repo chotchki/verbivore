@@ -20,6 +20,7 @@ async fn harvested_snapshot_survives_the_dataset_round_trip() -> anyhow::Result<
         fixture,
         VIEWPORT_W,
         VIEWPORT_H,
+        1.0,
         snap.labels.clone(),
         &snap.screenshot_png,
     )?;

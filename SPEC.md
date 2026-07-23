@@ -77,6 +77,7 @@ Two guards, named now because they're the failure modes of this choice:
 
 - **The schema is a flat action sequence + assertions, NEVER a language.** No conditionals, no loops in data (config DSLs die by accreting control flow until they're a bad language with no debugger). Anything needing control flow is Rust.
 - **Quirks plug in by name:** a record can reference a registered custom action (a named Rust impl in the executor's registry) instead of primitives — commit-on-blur and friends stay code, the record just points at them. This is how the hand-written behavioral layer from scope survives the data format.
+- **Verbs pin their viewport + dpr:** responsive breakpoints make a page a DIFFERENT UI at different widths (desktop nav vs hamburger) — a verb grounded at one width may not exist at another, and screenshot-space coordinates only mean something at a known dpr. The record carries both; execution and repair run at exactly that rendering.
 
 Possible v2 nicety (noted, not promised): a `build.rs` that emits typed wrapper fns from accepted records, so tests get compile-time-checked verb names and args while data stays the source of truth.
 

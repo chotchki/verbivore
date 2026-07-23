@@ -25,7 +25,7 @@ This PLAN.md is driven by `claude-plan-bridge` (FORMATv2):
 - [x] 1.3 - Containerized corpus: Grafana + Gitea with seeded state
 - [x] 1.4 - Label extraction: interactive elements to bbox + role + accessible name (DPR, scroll offsets, occlusion filtering)
 - [x] 1.5 - On-disk dataset format, portable + versioned, with a stats tool
-- [ ] 1.6 - Re-render augmentation: themes, viewports, zoom
+- [x] 1.6 - Re-render augmentation: themes, viewports, zoom, dpr + breakpoint widths
 
 ## Phase 2 - Grounding detector
 - [ ] 2.1 - Burn scaffold: wgpu backend, dataset loader for the harvest format
