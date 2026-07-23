@@ -33,3 +33,7 @@ path = "src/bin/train_eval.rs"
 [[bin]]
 name = "eval-ckpt"
 path = "src/bin/eval_ckpt.rs"
+
+[[bin]]
+name = "rank-top1"
+path = "src/bin/rank_top1.rs"

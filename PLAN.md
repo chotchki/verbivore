@@ -32,7 +32,8 @@ This PLAN.md is driven by `claude-plan-bridge` (FORMATv2):
 - [x] 2.8 - Intent phrase to element ranking (classical text match for v1)
 - [ ] 2.9 - Held-out app eval against the 80% top-1 gate
   - [x] 2.9.1 - Pipeline proven on real data: bias prior tames focal start (49.6 vs 19.7k), loss 4.5 @ 60 epochs; cross-app mAP 0.001 from a 4-layout corpus (honest baseline, matched-IoU 0.62)
-  - [ ] 2.9.2 - Corpus breadth: more pages + at least 2 more apps, retrain, re-eval the gate
+  - [x] 2.9.2 - Corpus breadth: 6 apps / 48 layouts / 1232 samples — detector mAP curve 0.001 → 0.012 → 0.040, still superlinear (several hundred layouts projected for 0.3+, the docker-app rung covers it)
+  - [x] 2.9.4 - Top-1 grounding gate on held-out gitea: 0.944 (3717/3937, avg 26 candidates) — PASSES the 80% bar; misses are name+role dupes, i.e. the container-scoping cases the spec predicted
   - [ ] 2.9.3 - Leave-one-app-out rotation (k-fold at app granularity): k trainings each holding out a different app, report mean mAP + spread — the honest error bar for unseen-app generalization
 
 ## Phase 3 - Effect validation
