@@ -164,8 +164,12 @@ fn jaccard_distance(a: &HashSet<String>, b: &HashSet<String>) -> f64 {
 /// across templates instead of down whichever list the first page linked.
 struct Frontier {
     guard: FrontierGuard,
-    queue: Vec<(String, HashSet<String>)>,
+    queue: Vec<(String, HashSet<String>, (f64, f64))>,
     visited: Vec<HashSet<String>>,
+    /// Where each visited page's inbound link sat — the LAST selection axis
+    /// (position breaks token ties; on canvas/wasm surfaces it is the only
+    /// axis with signal, every target sharing one chain and one url).
+    visited_positions: Vec<(f64, f64)>,
     /// Path families already visited: a query-only twin of a visited page is
     /// the same template BY CONSTRUCTION, whatever its tokens say — probe-
     /// landed twins carry different chain tokens than their href originals
@@ -178,8 +182,9 @@ impl Frontier {
     fn new(start_url: &str, deny: &[String], max_pages: usize) -> Self {
         Self {
             guard: FrontierGuard::new(start_url, deny, max_pages),
-            queue: vec![(start_url.to_string(), url_tokens(start_url))],
+            queue: vec![(start_url.to_string(), url_tokens(start_url), (640.0, 400.0))],
             visited: Vec::new(),
+            visited_positions: Vec::new(),
             visited_families: HashSet::new(),
         }
     }
@@ -190,11 +195,11 @@ impl Frontier {
     /// check, because which side carries the template signal is per-app
     /// unknowable (opaque routes: the chain knows; plain sidebars: the url
     /// knows; the union lets whichever has information dominate).
-    fn push(&mut self, href: &str, chain_tokens: &[String]) -> bool {
+    fn push(&mut self, href: &str, chain_tokens: &[String], pos: (f64, f64)) -> bool {
         if let Some(clean) = self.guard.admit(href) {
             let mut tokens = url_tokens(&clean);
             tokens.extend(chain_tokens.iter().cloned());
-            self.queue.push((clean, tokens));
+            self.queue.push((clean, tokens, pos));
             true
         } else {
             false
@@ -203,25 +208,32 @@ impl Frontier {
 
     fn next(&mut self) -> Option<String> {
         let mut pick = 0usize;
-        let mut best = f64::NEG_INFINITY;
-        for (i, (url, tokens)) in self.queue.iter().enumerate() {
+        let mut best = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+        for (i, (url, tokens, pos)) in self.queue.iter().enumerate() {
             let d = if self.visited_families.contains(&FrontierGuard::family(url)) {
                 0.05 // same path as a visited page: same template, tokens lie
             } else {
                 self.min_distance(tokens)
             };
-            // Strictly-greater keeps the earliest on ties: stable, BFS-flavored.
-            if d > best {
-                best = d;
+            let spat = self
+                .visited_positions
+                .iter()
+                .map(|&v| crate::probe::spatial_distance(*pos, v))
+                .fold(f64::INFINITY, f64::min);
+            // Token distance decides; position breaks near-ties (LAST axis).
+            let better = d > best.0 + 0.051 || (d > best.0 - 0.051 && spat > best.1);
+            if better {
+                best = (d, spat);
                 pick = i;
             }
         }
         if self.queue.is_empty() {
             return None;
         }
-        let (url, tokens) = self.queue.swap_remove(pick);
+        let (url, tokens, pos) = self.queue.swap_remove(pick);
         self.visited_families.insert(FrontierGuard::family(&url));
         self.visited.push(tokens);
+        self.visited_positions.push(pos);
         Some(url)
     }
 
@@ -333,7 +345,7 @@ pub async fn crawl(
         let hrefs = crate::probe::collect_hrefs(&page).await?;
         page.close().await.ok();
         for href in hrefs {
-            frontier.push(&href.href, &href.tokens);
+            frontier.push(&href.href, &href.tokens, (href.x, href.y));
         }
     }
     Ok(report)
@@ -380,17 +392,17 @@ pub async fn discover(
         page.close().await.ok();
         let mut admitted = 0usize;
         for href in hrefs {
-            if frontier.push(&href.href, &href.tokens) {
+            if frontier.push(&href.href, &href.tokens, (href.x, href.y)) {
                 admitted += 1;
             }
         }
         // Url structure we can't trust (href-dry page): probe navigation
         // targets by DOM-chain diversity instead and admit wherever they land.
         if admitted < 3 {
-            for (landed, chain) in
+            for (landed, chain, pos) in
                 crate::probe::probe_urls(harvester, &url, &variation, 6).await?
             {
-                if frontier.push(&landed, &chain) {
+                if frontier.push(&landed, &chain, pos) {
                     eprintln!("discover: probed -> {landed}");
                 }
             }
@@ -455,10 +467,10 @@ mod tests {
         let mut f = Frontier::new("http://x/", &[], 30);
         assert_eq!(f.next().as_deref(), Some("http://x/"));
         for page in ["a", "b", "c"] {
-            f.push(&format!("http://x/wiki/{page}"), &[]);
+            f.push(&format!("http://x/wiki/{page}"), &[], (0.0, 0.0));
         }
-        f.push("http://x/special/search?q=1", &[]);
-        f.push("http://x/admin/settings/users", &[]);
+        f.push("http://x/special/search?q=1", &[], (0.0, 0.0));
+        f.push("http://x/admin/settings/users", &[], (0.0, 0.0));
 
         let picks: Vec<String> = (0..3).filter_map(|_| f.next()).collect();
         let wiki_picks = picks.iter().filter(|u| u.contains("/wiki/")).count();
@@ -482,9 +494,9 @@ mod tests {
             ["footer", "a", "txt:legal"].iter().map(|s| s.to_string()).collect();
         let mut f = Frontier::new("http://x/", &[], 30);
         assert_eq!(f.next().as_deref(), Some("http://x/"));
-        f.push("http://x/view/1b9a2c3d", &menu);
-        f.push("http://x/view/9e8f7a6b", &menu);
-        f.push("http://x/view/5c4d3e2f", &footer);
+        f.push("http://x/view/1b9a2c3d", &menu, (0.0, 0.0));
+        f.push("http://x/view/9e8f7a6b", &menu, (0.0, 0.0));
+        f.push("http://x/view/5c4d3e2f", &footer, (0.0, 0.0));
         let first = f.next().unwrap();
         let second = f.next().unwrap();
         assert_eq!(first, "http://x/view/1b9a2c3d", "ties fall to enqueue order");

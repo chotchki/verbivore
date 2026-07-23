@@ -96,18 +96,21 @@ fn hrefs_with_chains_js() -> String {
     const out = [];
     for (const el of document.querySelectorAll('a[href]')) {{
         if (out.length >= 300) break;
-        out.push({{ href: el.href, tokens: chain(el).tokens }});
+        const r = el.getBoundingClientRect();
+        out.push({{ href: el.href, tokens: chain(el).tokens, x: r.left + r.width / 2, y: r.top + r.height / 2 }});
     }}
     return out;
 }})()"#
     )
 }
 
-/// An anchor and the DOM chain it hangs from.
+/// An anchor, the DOM chain it hangs from, and where it sits on the page.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ChainedHref {
     pub href: String,
     pub tokens: Vec<String>,
+    pub x: f64,
+    pub y: f64,
 }
 
 pub async fn collect_hrefs(page: &chromiumoxide::Page) -> Result<Vec<ChainedHref>> {
@@ -118,9 +121,21 @@ pub async fn collect_nav_candidates(page: &chromiumoxide::Page) -> Result<Vec<Na
     Ok(page.evaluate(collect_js()).await?.into_value()?)
 }
 
+/// Token distances within this margin count as TIES, decided spatially —
+/// position is the LAST axis (chris's precedence): pure noise when tokens
+/// discriminate, the only signal left when they can't (canvas/wasm targets
+/// share one chain and one url; spatial spread is all the diversity there is).
+const TOKEN_TIE_MARGIN: f64 = 0.051;
+/// Normalizes pixel distance to ~[0,1] against the default viewport diagonal.
+const VIEWPORT_DIAG: f64 = 1509.0;
+
+pub(crate) fn spatial_distance(a: (f64, f64), b: (f64, f64)) -> f64 {
+    (((a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)).sqrt() / VIEWPORT_DIAG).min(1.0)
+}
+
 /// Farthest-first probe order over chain-token sets (greedy k-center, same
-/// shape as the url frontier's selection). Pure so the policy is testable
-/// without a browser.
+/// shape as the url frontier's selection), position breaking token ties.
+/// Pure so the policy is testable without a browser.
 pub fn probe_order(candidates: &[NavCandidate]) -> Vec<usize> {
     let sets: Vec<HashSet<String>> =
         candidates.iter().map(|c| c.tokens.iter().cloned().collect()).collect();
@@ -133,26 +148,35 @@ pub fn probe_order(candidates: &[NavCandidate]) -> Vec<usize> {
     };
     let mut order: Vec<usize> = Vec::new();
     let mut remaining: Vec<usize> = (0..candidates.len()).collect();
-    while let Some(pos) = remaining
-        .iter()
-        .position(|&i| {
-            let best = remaining
-                .iter()
-                .map(|&j| {
-                    order
-                        .iter()
-                        .map(|&k| dist(&sets[j], &sets[k]))
-                        .fold(f64::INFINITY, f64::min)
-                })
-                .fold(f64::NEG_INFINITY, f64::max);
-            let mine = order
+    while !remaining.is_empty() {
+        let score = |i: usize| {
+            let tok = order
                 .iter()
                 .map(|&k| dist(&sets[i], &sets[k]))
                 .fold(f64::INFINITY, f64::min);
-            mine >= best
-        })
-    {
-        order.push(remaining.remove(pos));
+            let spat = order
+                .iter()
+                .map(|&k| {
+                    spatial_distance(
+                        (candidates[i].x, candidates[i].y),
+                        (candidates[k].x, candidates[k].y),
+                    )
+                })
+                .fold(f64::INFINITY, f64::min);
+            (tok, spat)
+        };
+        let mut pick = 0usize;
+        let mut best = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+        for (pos, &i) in remaining.iter().enumerate() {
+            let (tok, spat) = score(i);
+            let better = tok > best.0 + TOKEN_TIE_MARGIN
+                || (tok > best.0 - TOKEN_TIE_MARGIN && spat > best.1);
+            if better {
+                best = (tok, spat);
+                pick = pos;
+            }
+        }
+        order.push(remaining.remove(pick));
     }
     order
 }
@@ -166,7 +190,7 @@ pub async fn probe_urls(
     origin: &str,
     variation: &Variation,
     budget: usize,
-) -> Result<Vec<(String, Vec<String>)>> {
+) -> Result<Vec<(String, Vec<String>, (f64, f64))>> {
     let page = harvester.open_page(origin, variation).await?;
     harvester.settle_render(&page).await?;
     let candidates = collect_nav_candidates(&page).await?;
@@ -197,7 +221,7 @@ pub async fn probe_urls(
                 && let Ok(url) = url.into_value::<String>()
                 && url != origin
             {
-                landed.push((url, candidate.tokens.clone()));
+                landed.push((url, candidate.tokens.clone(), (candidate.x, candidate.y)));
             }
         }
         page.close().await.ok();
@@ -218,6 +242,30 @@ mod tests {
         }
     }
 
+
+    #[test]
+    fn canvas_targets_spread_spatially_when_tokens_cannot_discriminate() {
+        // The canvas/wasm case: every click target shares one chain (the
+        // canvas element) and one url — token distance is zero across the
+        // board, position is the only diversity axis left.
+        let canvas = |x: f64, y: f64| NavCandidate {
+            tokens: vec!["canvas-chain".into()],
+            selector: "canvas".into(),
+            x,
+            y,
+        };
+        let cands = vec![
+            canvas(100.0, 100.0),
+            canvas(110.0, 105.0), // near-duplicate of the first
+            canvas(1200.0, 700.0),
+            canvas(640.0, 400.0),
+        ];
+        let order = probe_order(&cands);
+        assert_eq!(order[0], 0, "seed");
+        assert_eq!(order[1], 2, "opposite corner probes second");
+        assert_eq!(order[2], 3, "center third");
+        assert_eq!(order[3], 1, "the near-duplicate goes last");
+    }
     #[test]
     fn text_tokens_separate_same_menu_siblings() {
         // Identical structural chains; only the text distinguishes them —
