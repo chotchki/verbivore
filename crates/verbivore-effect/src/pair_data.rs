@@ -2,6 +2,8 @@
 //! fixed small input, split by PAGE URL — pairs from one page share pixels, so
 //! a random split would leak backgrounds between train and eval.
 
+use std::collections::BTreeMap;
+
 use anyhow::{Context, Result};
 use burn::data::dataloader::batcher::Batcher;
 use burn::prelude::{Backend, Tensor, TensorData};
@@ -22,8 +24,45 @@ pub struct PairItem {
 pub struct PairSplit {
     pub train: Vec<PairItem>,
     pub heldout: Vec<PairItem>,
-    /// (mssim, changed) for the heldout slice — the baseline on identical data.
+    /// (mssim, changed) per slice — the baseline scored on identical data.
+    /// Train-side scores exist so thresholds can be TUNED there and frozen.
+    pub train_ssim: Vec<(f64, bool)>,
     pub heldout_ssim: Vec<(f64, bool)>,
+    pub composition: SplitComposition,
+}
+
+/// A control pair (nobody clicked) whose pixels still moved this much marks
+/// its page as ambient-noisy — the pages where an SSIM threshold gets squeezed.
+const NOISY_MSSIM: f64 = 0.995;
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct SideComposition {
+    pub pairs: usize,
+    pub urls: usize,
+    /// Pages whose no-action control pair dips below [`NOISY_MSSIM`].
+    pub noisy_urls: usize,
+}
+
+/// Both sides of the split, summarized — printed by every eval so the output
+/// carries proof the heldout slice actually contains hard pages (the 3.5 spike
+/// silently held out only quiet ones and saturated).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct SplitComposition {
+    pub train: SideComposition,
+    pub heldout: SideComposition,
+}
+
+impl std::fmt::Display for SplitComposition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (name, s) in [("train", self.train), ("heldout", self.heldout)] {
+            writeln!(
+                f,
+                "{name}: {} pairs over {} urls ({} ambient-noisy)",
+                s.pairs, s.urls, s.noisy_urls
+            )?;
+        }
+        Ok(())
+    }
 }
 
 /// Loads the VISIBLE subset (pixel-identical Changed pairs excluded — those are
@@ -32,8 +71,12 @@ pub fn load_visible_split(pairs: &PairDataset) -> Result<PairSplit> {
     let mut split = PairSplit {
         train: Vec::new(),
         heldout: Vec::new(),
+        train_ssim: Vec::new(),
         heldout_ssim: Vec::new(),
+        composition: SplitComposition::default(),
     };
+    // url -> (heldout?, noisy?) accumulated across its pairs.
+    let mut urls: BTreeMap<String, (bool, bool)> = BTreeMap::new();
     for id in pairs.pair_ids()? {
         let meta = pairs.meta(&id)?;
         let before_png = std::fs::read(pairs.before_path(&id))?;
@@ -47,14 +90,28 @@ pub fn load_visible_split(pairs: &PairDataset) -> Result<PairSplit> {
             after: to_chw(&after_png).with_context(|| format!("pair {id} after"))?,
             changed,
         };
-        if url_bucket(&meta.url) < 2 {
-            split
-                .heldout_ssim
-                .push((crate::mssim_png(&before_png, &after_png)?, changed));
+        let mssim = crate::mssim_png(&before_png, &after_png)?;
+        let heldout = url_bucket(&meta.url) < 2;
+        let entry = urls.entry(meta.url.clone()).or_insert((heldout, false));
+        entry.1 |= meta.click.is_none() && mssim < NOISY_MSSIM;
+        if heldout {
+            split.heldout_ssim.push((mssim, changed));
             split.heldout.push(item);
         } else {
+            split.train_ssim.push((mssim, changed));
             split.train.push(item);
         }
+    }
+    split.composition.train.pairs = split.train.len();
+    split.composition.heldout.pairs = split.heldout.len();
+    for (heldout, noisy) in urls.values() {
+        let side = if *heldout {
+            &mut split.composition.heldout
+        } else {
+            &mut split.composition.train
+        };
+        side.urls += 1;
+        side.noisy_urls += *noisy as usize;
     }
     Ok(split)
 }

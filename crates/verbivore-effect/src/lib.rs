@@ -4,6 +4,7 @@
 
 pub mod models;
 pub mod pair_data;
+pub mod train;
 
 use anyhow::{Context, Result};
 use verbivore_dataset::{EffectLabel, PairDataset};

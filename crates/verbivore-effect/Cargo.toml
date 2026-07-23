@@ -10,6 +10,8 @@ repository.workspace = true
 anyhow = "1.0.104"
 burn = { version = "0.21", features = ["train", "metal", "ndarray"] }
 image = { version = "0.25.10", default-features = false, features = ["png"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 sha2 = "0.11.0"
 verbivore-dataset = { version = "0.1.0", path = "../verbivore-dataset" }
 
@@ -20,3 +22,7 @@ path = "src/bin/effect_baseline.rs"
 [[bin]]
 name = "effect-spike"
 path = "src/bin/effect_spike.rs"
+
+[[bin]]
+name = "effect-train"
+path = "src/bin/effect_train.rs"

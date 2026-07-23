@@ -7160,6 +7160,8 @@ dependencies = [
  "anyhow",
  "burn",
  "image",
+ "serde",
+ "serde_json",
  "sha2 0.11.0",
  "verbivore-dataset",
 ]

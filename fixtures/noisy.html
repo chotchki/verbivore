@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<!--
+  The sabotage fixture: a page that is ALWAYS visually moving, where real click
+  effects range from a full panel toggle down to a 10px status dot. SSIM gets
+  squeezed from both ends — ambient animation pushes false alarms, subtle
+  effects push misses. A learned pair model has to beat it here or not at all.
+
+  ?v=N (1..20) picks a variant: theme hue, section order, animation mix and
+  timing all derive from N, so each variant URL is a distinct rendering AND a
+  distinct url-hash bucket for the train/heldout split.
+
+  Click handlers deliberately burst 3-4 DOM mutations each (visible or not) so
+  the CDP signal labeler stays reliable above the ticker's ambient noise floor.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Verbivore noisy fixture</title>
+<style>
+  :root { --hue: 210; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: system-ui, sans-serif; color: #222;
+    background: #f4f4f6;
+  }
+  header {
+    padding: 14px 24px; display: flex; align-items: center; gap: 16px;
+    color: #fff;
+    background: linear-gradient(120deg,
+      hsl(var(--hue), 65%, 42%), hsl(calc(var(--hue) + 40), 65%, 52%));
+    background-size: 200% 200%;
+  }
+  header.pulse { animation: drift var(--pulse-dur, 3s) ease-in-out infinite alternate; }
+  @keyframes drift { from { background-position: 0% 50%; } to { background-position: 100% 50%; } }
+  .spinner {
+    width: 26px; height: 26px; border-radius: 50%;
+    border: 4px solid rgba(255,255,255,0.35); border-top-color: #fff;
+    animation: spin var(--spin-dur, 1.1s) linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  main { display: flex; flex-direction: column; padding: 18px 24px; gap: 18px; }
+  section { background: #fff; border-radius: 8px; padding: 14px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+  .marquee { overflow: hidden; white-space: nowrap; }
+  .marquee > div {
+    display: inline-block; padding-left: 100%;
+    animation: slide var(--marquee-dur, 9s) linear infinite;
+    color: hsl(var(--hue), 55%, 38%); font-weight: 600;
+  }
+  @keyframes slide { to { transform: translateX(-100%); } }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  button {
+    padding: 8px 14px; border: 1px solid hsl(var(--hue), 40%, 55%);
+    border-radius: 6px; background: hsl(var(--hue), 60%, 94%); cursor: pointer;
+    font-size: 14px;
+  }
+  button:hover { background: hsl(var(--hue), 60%, 88%); }
+  .badge {
+    display: inline-block; min-width: 20px; text-align: center; padding: 1px 5px;
+    border-radius: 9px; background: hsl(var(--hue), 70%, 45%); color: #fff;
+    font-size: 12px;
+  }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { border-bottom: 1px solid #e2e2e6; padding: 6px 10px; text-align: left; font-size: 14px; }
+  #details { line-height: 1.5; }
+  .dead {
+    min-height: 160px; background: #ececef; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center; color: #999;
+  }
+</style>
+</head>
+<body>
+<header id="hdr">
+  <div class="spinner" aria-hidden="true"></div>
+  <h1 style="font-size:18px; margin:0;">Ops console <span id="variant-tag"></span></h1>
+  <span style="margin-left:auto; font-variant-numeric: tabular-nums;" id="clock" aria-hidden="true"></span>
+</header>
+<main id="main">
+  <section id="sec-ticker">
+    <h2 style="font-size:15px; margin:0 0 8px;">Live throughput</h2>
+    <div style="font-size:26px; font-variant-numeric: tabular-nums;">
+      <span id="ticker">0</span> <span style="font-size:13px; color:#777;">req/s</span>
+    </div>
+  </section>
+  <section id="sec-marquee" class="marquee" aria-hidden="true">
+    <div>system nominal &middot; queue depth stable &middot; last deploy 4h ago &middot; no incidents &middot;</div>
+  </section>
+  <section id="sec-controls">
+    <h2 style="font-size:15px; margin:0 0 8px;">Controls</h2>
+    <div class="controls">
+      <button id="toggle">Toggle details</button>
+      <button id="addrow">Add row</button>
+      <button id="badge-btn">Increment badge <span class="badge" id="badge">0</span></button>
+      <button id="status-btn">Cycle status <span class="dot" id="dot" style="background:#2e9e44;"></span></button>
+      <button id="noop">Do nothing</button>
+    </div>
+  </section>
+  <section id="sec-details">
+    <div id="details">
+      <h2 style="font-size:15px; margin:0 0 8px;">Deployment details</h2>
+      <p>Region us-east-1, replica count 6, canary at 5%. Config revision
+      f3a190c rolled out cleanly; error budget 99.2% remaining this window.</p>
+      <p>Autoscaling window 2&ndash;12 pods, current 6. Postgres primary healthy,
+      replication lag under 40ms.</p>
+    </div>
+  </section>
+  <section id="sec-table">
+    <table>
+      <thead><tr><th>Job</th><th>State</th></tr></thead>
+      <tbody id="rows">
+        <tr><td>nightly-backup</td><td>ok</td></tr>
+        <tr><td>index-rebuild</td><td>ok</td></tr>
+      </tbody>
+    </table>
+  </section>
+  <section id="sec-dead" class="dead">quiet zone</section>
+</main>
+<script>
+  const v = Math.max(1, parseInt(new URLSearchParams(location.search).get("v") || "1", 10) || 1);
+  document.getElementById("variant-tag").textContent = "v" + v;
+  const root = document.documentElement.style;
+  root.setProperty("--hue", String((v * 47) % 360));
+  root.setProperty("--spin-dur", (0.7 + (v % 4) * 0.3).toFixed(1) + "s");
+  root.setProperty("--pulse-dur", (2 + (v % 5)).toFixed(1) + "s");
+  root.setProperty("--marquee-dur", (6 + (v % 6) * 2).toFixed(1) + "s");
+  if (v % 3 !== 0) document.getElementById("hdr").classList.add("pulse");
+  if (v % 2 !== 0) document.getElementById("sec-marquee").style.display = "none";
+  // Section order permutes per variant so layouts genuinely differ.
+  ["sec-ticker", "sec-marquee", "sec-controls", "sec-details", "sec-table", "sec-dead"]
+    .forEach((id, i) => { document.getElementById(id).style.order = String((i + v) % 6); });
+  if (v % 4 === 0) document.getElementById("details").style.display = "none";
+
+  // Deterministic ambient ticker (LCG seeded by variant): DOM-mutating noise
+  // the ambient window must subtract out.
+  let seed = 0x9e3779b9 ^ v;
+  const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+  let rate = 840 + Math.floor(rnd() * 200);
+  const tick = () => {
+    rate = Math.max(200, rate + Math.floor(rnd() * 41) - 20);
+    document.getElementById("ticker").textContent = String(rate);
+    document.getElementById("clock").textContent =
+      new Date().toISOString().slice(11, 19);
+  };
+  tick();
+  setInterval(tick, 300 + (v % 5) * 150);
+
+  // Every handler bursts >=3 mutations so the click signal clears ambient variance.
+  const stamp = (el) => {
+    el.setAttribute("data-clicks", String(1 + parseInt(el.getAttribute("data-clicks") || "0", 10)));
+    document.body.setAttribute("data-last-action", el.id);
+  };
+  document.getElementById("toggle").addEventListener("click", (e) => {
+    const d = document.getElementById("details");
+    d.style.display = d.style.display === "none" ? "" : "none";
+    stamp(e.currentTarget);
+  });
+  document.getElementById("addrow").addEventListener("click", (e) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = "<td>adhoc-" + document.querySelectorAll("#rows tr").length + "</td><td>queued</td>";
+    document.getElementById("rows").appendChild(tr);
+    stamp(e.currentTarget);
+  });
+  document.getElementById("badge-btn").addEventListener("click", (e) => {
+    const b = document.getElementById("badge");
+    b.textContent = String(1 + parseInt(b.textContent, 10));
+    stamp(e.currentTarget);
+  });
+  const colors = ["#2e9e44", "#d9a012", "#c43d2e", "#5470c6"];
+  let ci = v % colors.length;
+  document.getElementById("status-btn").addEventListener("click", (e) => {
+    ci = (ci + 1) % colors.length;
+    document.getElementById("dot").style.background = colors[ci];
+    stamp(e.currentTarget);
+  });
+  document.getElementById("noop").addEventListener("click", () => {});
+</script>
+</body>
+</html>
