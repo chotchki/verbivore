@@ -1,6 +1,6 @@
-# SPEC — vision-assisted verbs for browser testing
+# SPEC — verbivore
 
-Working name: `rust-ml-chromiumoxide` (rename freely, the repo name is a placeholder).
+Vision-assisted verbs for browser testing. The name is the pitch: a verbivore devours a site and digests it into verbs (and yes, it follows the herbivore/carnivore pattern on purpose).
 
 ## Intent
 
