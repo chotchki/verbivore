@@ -118,6 +118,7 @@ A side benefit worth exploiting when the effect dataset gets designed: a task ve
 - Grounding: 80% top-1 hit rate on a held-out app the model never trained on. If we can't hit that, fall back to grounding as a ranked-suggestions tool (human picks from 3) and re-evaluate.
 - Effect validation: catches 95% of deliberately-sabotaged actions (clicks rewired to dead pixels) with under 5% false alarms on a noisy animated page. The sabotage harness is itself a deliverable — it's the planted-violation test of this project.
 - Effect validation, the honest bar: the trained model must BEAT a tuned SSIM-threshold diff (burn ships SSIM as a metric, so the baseline is nearly free). If dumb structural similarity hits the numbers above, we ship the baseline and the ML moves elsewhere — boring is good.
+- Effect gates apply to VISIBLY-changed pairs only (measured 2026-07-22: ~10% of signal-Changed actions paint nothing — a fetch with no UI effect is invisible to any visual model, ceiling not failure). Runtime rides two channels: the CDP signal counters work at runtime too on DOM pages, so signals catch invisible effects and the visual model covers what signals can't see — canvas redraws and visual confirmation. The runtime effect gate is their OR.
 - End-to-end: one real app where `generate-verb "pick a date range"` produces a verb that runs deterministically and self-reports a dead click.
 
 ## Prior art

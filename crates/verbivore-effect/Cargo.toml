@@ -7,3 +7,10 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+anyhow = "1.0.104"
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+verbivore-dataset = { version = "0.1.0", path = "../verbivore-dataset" }
+
+[[bin]]
+name = "effect-baseline"
+path = "src/bin/effect_baseline.rs"

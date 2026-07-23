@@ -40,8 +40,8 @@ This PLAN.md is driven by `claude-plan-bridge` (FORMATv2):
 - [x] 3.1 - Before/after pair capture around CDP actions
 - [x] 3.2 - CDP-signal labeler: DOM mutations, network activity, aria flips
 - [x] 3.3 - Negative pairs: dead-area clicks + no-action ambient-animation frames
-- [ ] 3.4 - SSIM-threshold baseline, tuned + measured (the bar to beat)
-- [ ] 3.5 - Spike: siamese distance vs change-region head, pick one
+- [x] 3.4 - SSIM baseline on 132 real pairs: catch 0.829 (0.926 on visible), FA 0.054, acc 0.879 — gates unmet, model has an honest job
+- [ ] 3.5 - Spike: siamese distance vs change-region head, pick one (train/eval on the VISIBLE subset — 8/76 Changed pairs paint nothing, they're the signal channel's job)
 - [ ] 3.6 - Train pair model, eval vs 95% catch / 5% false-alarm gates and the baseline
 - [ ] 3.7 - Sabotage harness: dead-pixel click rewiring + noisy animated fixture
 

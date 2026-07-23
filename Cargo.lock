@@ -7156,6 +7156,11 @@ dependencies = [
 [[package]]
 name = "verbivore-effect"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "image",
+ "verbivore-dataset",
+]
 
 [[package]]
 name = "verbivore-executor"
