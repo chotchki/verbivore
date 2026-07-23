@@ -30,7 +30,13 @@ fn main() -> anyhow::Result<()> {
 
     let heldout = GroundingDataset::open(&heldout_dir)?;
     let mut acc = EvalAccumulator::default();
-    let decode_cfg = DecodeConfig::default();
+    // Eval decodes near-zero threshold: mAP judges the full ranking, and the
+    // runtime default (0.3) would truncate the PR curve before it's measured.
+    let decode_cfg = DecodeConfig {
+        score_threshold: 0.05,
+        max_detections: 300,
+        ..DecodeConfig::default()
+    };
     let mut buffered = Vec::new();
     let flush = |items: &mut Vec<_>, acc: &mut EvalAccumulator| {
         if items.is_empty() {
