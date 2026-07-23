@@ -5,27 +5,7 @@ use anyhow::Result;
 use chromiumoxide::Page;
 use chromiumoxide::cdp::browser_protocol::accessibility::{AxNode, AxValue};
 use chromiumoxide::cdp::browser_protocol::dom::GetContentQuadsParams;
-pub use verbivore_dataset::{Bbox, ElementLabel};
-
-/// A11y roles that count as interactive for detection purposes.
-const INTERACTIVE_ROLES: &[&str] = &[
-    "button",
-    "link",
-    "textbox",
-    "searchbox",
-    "checkbox",
-    "radio",
-    "combobox",
-    "listbox",
-    "option",
-    "menuitem",
-    "menuitemcheckbox",
-    "menuitemradio",
-    "tab",
-    "switch",
-    "slider",
-    "spinbutton",
-];
+pub use verbivore_dataset::{Bbox, ElementLabel, INTERACTIVE_ROLES};
 
 /// Candidates and the occlusion hit-test work in CSS px (elementFromPoint's
 /// space); scaling by dpr into screenshot space is the LAST step.

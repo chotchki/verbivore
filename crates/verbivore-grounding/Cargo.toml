@@ -7,3 +7,10 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+anyhow = "1.0.104"
+burn = { version = "0.21", features = ["train", "metal", "ndarray"] }
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+verbivore-dataset = { version = "0.1.0", path = "../verbivore-dataset" }
+
+[dev-dependencies]
+tempfile = "3.27.0"

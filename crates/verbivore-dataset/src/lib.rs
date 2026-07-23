@@ -18,6 +18,33 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const FORMAT_VERSION: u32 = 1;
 
+/// The canonical interactive-role list: what the harvester labels AND the class
+/// set the detector trains on. One list, or the two silently drift. Order is
+/// the class index — append only, reordering invalidates every trained model.
+pub const INTERACTIVE_ROLES: &[&str] = &[
+    "button",
+    "link",
+    "textbox",
+    "searchbox",
+    "checkbox",
+    "radio",
+    "combobox",
+    "listbox",
+    "option",
+    "menuitem",
+    "menuitemcheckbox",
+    "menuitemradio",
+    "tab",
+    "switch",
+    "slider",
+    "spinbutton",
+];
+
+/// Class index for a role, None for roles the detector doesn't know.
+pub fn role_to_class(role: &str) -> Option<usize> {
+    INTERACTIVE_ROLES.iter().position(|r| *r == role)
+}
+
 /// Bounding box in SCREENSHOT pixels (CSS px already scaled by the sample's
 /// dpr); break that invariant and every label is silently misaligned.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
