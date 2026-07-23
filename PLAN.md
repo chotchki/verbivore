@@ -22,7 +22,7 @@ This PLAN.md is driven by `claude-plan-bridge` (FORMATv2):
 ## Phase 2 - Grounding detector
 - [x] 2.1 - Burn scaffold: wgpu backend, dataset loader for the harvest format
 - [x] 2.2 - Anchor-free detector (FCOS/CenterNet-style) model definition
-- [ ] 2.3 - Detection loss + target assignment
+- [x] 2.3 - Detection loss + target assignment
 - [ ] 2.4 - Decode + NMS post-processing
 - [ ] 2.5 - IoU/mAP eval harness
 - [ ] 2.6 - Training loop: SupervisedTraining, checkpointing, metrics
