@@ -101,6 +101,50 @@ fn normalize(url: &str) -> String {
     url.split('#').next().unwrap_or(url).to_string()
 }
 
+/// The frontier walk WITHOUT verb proposal: same BFS, same deny list, urls
+/// out. This is how harvest url-lists stop being hand-curated — point it at
+/// an app, pipe the output into `verbivore harvest`.
+pub async fn discover(
+    harvester: &Harvester,
+    start_url: &str,
+    max_pages: usize,
+    deny: &[String],
+) -> Result<Vec<String>> {
+    let variation = Variation::default();
+    let mut visited: Vec<String> = Vec::new();
+    let mut frontier: VecDeque<String> = VecDeque::from([start_url.to_string()]);
+    let mut seen: HashSet<String> = HashSet::from([normalize(start_url)]);
+    while let Some(url) = frontier.pop_front() {
+        if visited.len() >= max_pages {
+            break;
+        }
+        let page = match harvester.open_page(&url, &variation).await {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("discover: skipping {url}: {e:#}");
+                continue;
+            }
+        };
+        visited.push(url.clone());
+        let hrefs: Vec<String> = page
+            .evaluate("[...document.querySelectorAll('a[href]')].map(a => a.href)")
+            .await?
+            .into_value()?;
+        page.close().await.ok();
+        for href in hrefs {
+            let clean = normalize(&href);
+            let lower = clean.to_lowercase();
+            if same_host(&clean, start_url)
+                && !deny.iter().any(|d| lower.contains(d.as_str()))
+                && seen.insert(clean.clone())
+            {
+                frontier.push_back(clean);
+            }
+        }
+    }
+    Ok(visited)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

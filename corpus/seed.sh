@@ -46,8 +46,46 @@ else
             -u verbivore --summary seed "Corpus Article"
 fi
 
+# Superset: db migrate + admin + examples (the ECharts dashboards ARE the
+# point — canvas content the effect model's visual channel exists for).
+# load_examples is slow (minutes, pulls data from github) but idempotent.
+if docker compose exec superset superset fab list-users 2>/dev/null | grep -q verbivore; then
+    echo "superset seeded, skipping"
+else
+    docker compose exec superset superset db upgrade
+    docker compose exec superset superset fab create-admin \
+        --username verbivore --firstname Verb --lastname Ivore \
+        --email verbivore@example.com --password verbivore123
+    docker compose exec superset superset init
+    docker compose exec superset superset load-examples || \
+        echo "superset examples failed (offline?), dashboards will be sparse"
+fi
+
+# Metabase: drive the first-boot wizard through its API (setup token is
+# public until setup completes). The bundled sample database provides depth.
+if curl -sf http://localhost:42006/api/session/properties | grep -q '"has-user-setup":true'; then
+    echo "metabase seeded, skipping"
+else
+    MB_TOKEN=$(curl -sf http://localhost:42006/api/session/properties |
+        sed -n 's/.*"setup-token":"\([^"]*\)".*/\1/p')
+    curl -sf -X POST http://localhost:42006/api/setup \
+        -H 'Content-Type: application/json' \
+        -d "{\"token\":\"$MB_TOKEN\",
+             \"user\":{\"email\":\"verbivore@example.com\",\"password\":\"verbivore123!\",
+                        \"first_name\":\"Verb\",\"last_name\":\"Ivore\"},
+             \"prefs\":{\"site_name\":\"Verbivore Corpus\",\"allow_tracking\":false}}" \
+        >/dev/null && echo "metabase setup complete" || echo "metabase setup failed"
+fi
+
+# Ghost seeds itself (welcome posts ship with the image); Heimdall has no
+# setup at all. Both render harvestable pages from first boot.
+
 echo "corpus seeded:"
 echo "  grafana   http://localhost:42001"
 echo "  gitea     http://localhost:42002"
 echo "  wordpress http://localhost:42003"
 echo "  mediawiki http://localhost:42004"
+echo "  superset  http://localhost:42005"
+echo "  metabase  http://localhost:42006"
+echo "  ghost     http://localhost:42007"
+echo "  heimdall  http://localhost:42008"

@@ -72,6 +72,17 @@ enum Cmd {
         deny: Vec<String>,
         start_url: String,
     },
+    /// Walk an app's frontier and print visited urls, one per line — the
+    /// harvest url-list generator
+    DiscoverUrls {
+        /// Page budget
+        #[arg(long, default_value_t = 30)]
+        max_pages: usize,
+        /// Extra denied url substrings
+        #[arg(long)]
+        deny: Vec<String>,
+        start_url: String,
+    },
     /// Ground one intent phrase on a page into a candidate verb record
     GenerateVerb {
         /// Verb store root
@@ -242,6 +253,25 @@ async fn main() -> Result<()> {
                 "{app}: {} pages, {} candidates proposed, {} already stored",
                 report.pages, report.proposed, report.skipped_existing
             );
+        }
+        Cmd::DiscoverUrls {
+            max_pages,
+            deny,
+            start_url,
+        } => {
+            let mut denied: Vec<String> = verbivore_generator::crawl::DEFAULT_DENY
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+            denied.extend(deny);
+            let harvester = Harvester::launch().await?;
+            let urls =
+                verbivore_generator::crawl::discover(&harvester, &start_url, max_pages, &denied)
+                    .await?;
+            harvester.close().await?;
+            for url in urls {
+                println!("{url}");
+            }
         }
         Cmd::GenerateVerb {
             verbs,

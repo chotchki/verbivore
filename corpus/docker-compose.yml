@@ -69,6 +69,48 @@ services:
     volumes:
       - mw_data:/var/www/data
 
+  superset:
+    image: apache/superset:4.0.2
+    ports:
+      - "42005:8088"
+    environment:
+      - SUPERSET_SECRET_KEY=verbivore-corpus-not-a-secret
+    volumes:
+      # AUTH_ROLE_PUBLIC=Admin: same no-login-flow principle as grafana's
+      # anonymous admin — the harvester never authenticates.
+      - ./superset/superset_config.py:/app/pythonpath/superset_config.py:ro
+      - superset_home:/app/superset_home
+
+  metabase:
+    image: metabase/metabase:v0.50.26
+    ports:
+      - "42006:3000"
+    volumes:
+      - mb_data:/metabase.db
+
+  ghost:
+    image: ghost:5.87-alpine
+    ports:
+      - "42007:2368"
+    environment:
+      # Development mode keeps the sqlite default; production demands mysql
+      # and this corpus does not need a second database for one blog.
+      - NODE_ENV=development
+      - url=http://localhost:42007
+    volumes:
+      - ghost_data:/var/lib/ghost/content
+
+  heimdall:
+    image: lscr.io/linuxserver/heimdall:2.6.1
+    ports:
+      - "42008:80"
+    volumes:
+      - heimdall_data:/config
+
 volumes:
   wp_html:
   mw_data:
+  superset_home:
+  mb_data:
+  ghost_data:
+  heimdall_data:
