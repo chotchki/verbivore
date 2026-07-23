@@ -17,6 +17,7 @@ verbivore-harvester = { version = "0.1.0", path = "../verbivore-harvester" }
 verbivore-verb = { version = "0.1.0", path = "../verbivore-verb" }
 
 [dev-dependencies]
+verbivore-effect = { version = "0.1.0", path = "../verbivore-effect" }
 tempfile = "3.27.0"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }
 verbivore-executor = { version = "0.1.0", path = "../verbivore-executor" }

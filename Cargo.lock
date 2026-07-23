@@ -7205,6 +7205,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "verbivore-dataset",
+ "verbivore-effect",
  "verbivore-executor",
  "verbivore-harvester",
  "verbivore-verb",
