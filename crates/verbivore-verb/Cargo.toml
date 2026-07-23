@@ -1,0 +1,19 @@
+[package]
+name = "verbivore-verb"
+description = "Verb records: the data format the executor runs and the generator emits. No browser, no ML framework — records outlive both."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# SCHEMA GUARD: this crate must never depend on burn (or any ML framework).
+# Provenance names models as strings; records stay valid across regime changes.
+
+[dependencies]
+anyhow = "1.0.104"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+verbivore-dataset = { version = "0.1.0", path = "../verbivore-dataset" }
+
+[dev-dependencies]
+tempfile = "3.27.0"

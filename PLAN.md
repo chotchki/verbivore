@@ -20,7 +20,7 @@ This PLAN.md is driven by `claude-plan-bridge` (FORMATv2):
 -->
 
 ## Phase 4 - Verb records + executor
-- [ ] 4.1 - Verb schema: action enum (click, right-click, hover, type — recon-gen's diagram context menus need right-click; menus only exist post-interaction), container-scoped intents, assertions, provenance block
+- [x] 4.1 - Verb schema: action enum (click, right-click, hover, type — recon-gen's diagram context menus need right-click; menus only exist post-interaction), container-scoped intents, assertions, provenance block. verbivore-verb crate: browser-free AND burn-free (the schema guard is structural — no dep to leak), one json per verb for reviewable repair diffs, per-rendering evidence variants (context miss = repair trigger), Action::Custom as the 4.3 hook, atomic saves
 - [ ] 4.2 - Generic executor: primitive actions over chromiumoxide
 - [ ] 4.3 - Custom-action registry (the quirk escape hatch)
 - [ ] 4.4 - Effect gate: pair model as settle check + diagnostic bundle on failure
