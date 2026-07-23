@@ -5,25 +5,7 @@ use anyhow::Result;
 use chromiumoxide::Page;
 use chromiumoxide::cdp::browser_protocol::accessibility::{AxNode, AxValue};
 use chromiumoxide::cdp::browser_protocol::dom::GetContentQuadsParams;
-
-/// Viewport-space bounding box. CSS px == screenshot px because the harvester
-/// forces device scale factor to 1; break that invariant and every label is
-/// silently misaligned with its screenshot.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Bbox {
-    pub x: f64,
-    pub y: f64,
-    pub w: f64,
-    pub h: f64,
-}
-
-/// One training label: where an interactive element is and what it is.
-#[derive(Debug, Clone)]
-pub struct ElementLabel {
-    pub bbox: Bbox,
-    pub role: String,
-    pub name: Option<String>,
-}
+pub use verbivore_dataset::{Bbox, ElementLabel};
 
 /// A11y roles that count as interactive for detection purposes.
 const INTERACTIVE_ROLES: &[&str] = &[

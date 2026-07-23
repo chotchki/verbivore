@@ -24,7 +24,7 @@ This PLAN.md is driven by `claude-plan-bridge` (FORMATv2):
 - [x] 1.2 - chromiumoxide spike: launch, navigate, screenshot, DOM + a11y tree extraction
 - [x] 1.3 - Containerized corpus: Grafana + Gitea with seeded state
 - [x] 1.4 - Label extraction: interactive elements to bbox + role + accessible name (DPR, scroll offsets, occlusion filtering)
-- [ ] 1.5 - On-disk dataset format, portable + versioned, with a stats tool
+- [x] 1.5 - On-disk dataset format, portable + versioned, with a stats tool
 - [ ] 1.6 - Re-render augmentation: themes, viewports, zoom
 
 ## Phase 2 - Grounding detector
