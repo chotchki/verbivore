@@ -26,9 +26,9 @@ This PLAN.md is driven by `claude-plan-bridge` (FORMATv2):
 - [x] 2.4 - Decode + NMS post-processing
 - [x] 2.5 - IoU/mAP eval harness
 - [x] 2.6 - Training loop: hand-rolled epoch loop (SupervisedTraining's plumbing wasn't worth it), checkpointing, metrics
-- [ ] 2.7 - Cross-machine benchmark: M3 Max wgpu vs 2080 Ti CUDA f16, fixed epochs, record the decision
+- [x] 2.7 - Cross-machine benchmark: M3 Max wgpu vs 2080 Ti CUDA f16, fixed epochs, record the decision
   - [x] 2.7.1 - Bench harness (train-bench bin, cuda feature) + metal side: 3.06s/epoch steady, 64 samples batch 8
-  - [ ] 2.7.2 - Run train-bench --features cuda on the 2080 Ti box, record the backend decision
+  - [x] 2.7.2 - Ti/WSL2 result: 11.35s/epoch steady, loss parity to 4 digits. DECISION: train on the M3 Max, Ti retires (revisit only with f16 + release if scale demands)
 - [x] 2.8 - Intent phrase to element ranking (classical text match for v1)
 - [ ] 2.9 - Held-out app eval against the 80% top-1 gate
 
