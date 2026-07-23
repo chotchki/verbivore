@@ -16,6 +16,17 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/chotchki/verbivore"
 
 # Deps optimized even in dev: debug-build ndarray convs turn a seconds-long
-# tensor test into minutes. Our own crates stay debug for real debugging.
+# tensor test into minutes.
 [profile.dev.package."*"]
 opt-level = 3
+
+# Our own crates get light optimization in dev too — the decode/eval and pixel
+# loops are ours, and speed is the point of this project. Full debugging is a
+# one-line `opt-level = 0` away when actually needed.
+[profile.dev]
+opt-level = 1
+
+# Release keeps enough symbols for a usable panic backtrace.
+[profile.release]
+lto = "thin"
+debug = "line-tables-only"
