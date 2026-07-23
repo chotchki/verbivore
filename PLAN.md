@@ -26,9 +26,9 @@ This PLAN.md is driven by `claude-plan-bridge` (FORMATv2):
 - [x] 3.4 - SSIM baseline on 132 real pairs: catch 0.829 (0.926 on visible), FA 0.054, acc 0.879 — gates unmet, model has an honest job
 - [x] 3.5 - Spike verdict: DIFF-STACK (1.000/0.000 on heldout, loss 0.13) beats siamese (0.857 — global embeddings wash out small local changes). Caveat: ssim also perfect on this 46-pair slice, too easy; 3.6 needs ambient-noise pages (grafana ?refresh=5s)
 - [ ] 3.6 - Train pair model, eval vs 95% catch / 5% false-alarm gates and the baseline
-  - [ ] 3.6.1 - Noisy animated fixture (CSS noise + JS ticker + subtle-change buttons, URL variants) — doubles as 3.7's fixture source
-  - [ ] 3.6.2 - Split composition report + train-side ssim (threshold-transfer prerequisite; diagnosis: all ?refresh=5s pages hashed into train, heldout was all-quiet)
-  - [ ] 3.6.3 - effect-train bin: thresholds tuned on TRAIN and frozen for heldout, checkpoint + threshold sidecar for the phase-4 gate
+  - [x] 3.6.1 - Noisy animated fixture (CSS noise + JS ticker + subtle-change buttons, URL variants) — doubles as 3.7's fixture source; 12 variants harvested clean over file://
+  - [x] 3.6.2 - Split composition report + train-side ssim (threshold-transfer prerequisite; diagnosis: all ?refresh=5s pages hashed into train, heldout was all-quiet)
+  - [x] 3.6.3 - effect-train bin: thresholds tuned on TRAIN and frozen for heldout, checkpoint + threshold sidecar for the phase-4 gate, heldout misclassification dump. FIXTURE VERDICT: ssim oracle ceiling now FAILS gates (0.971/0.065) — baseline officially beatable; diff-stack 1.000/0.065 at 60 epochs, unconverged
   - [ ] 3.6.4 - Harvest fixture pairs into corpus, final gate run vs baseline
 - [ ] 3.7 - Sabotage harness: dead-pixel click rewiring + noisy animated fixture
 

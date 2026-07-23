@@ -46,6 +46,17 @@ fn gate(catch: f64, fa: f64) -> &'static str {
     if catch >= 0.95 && fa <= 0.05 { "PASS" } else { "FAIL" }
 }
 
+/// Every heldout pair the frozen threshold gets wrong, with provenance —
+/// the FA lists for ssim vs model are the diagnostic that matters.
+fn dump_misses(scored: &[(f64, bool)], items: &[verbivore_effect::pair_data::PairItem], t: f64) {
+    for ((score, _), item) in scored.iter().zip(items) {
+        if (*score >= t) != item.changed {
+            let kind = if item.changed { "MISS" } else { "FALSE-ALARM" };
+            println!("  {kind} score={score:.3} click={:?} {}", item.click, item.url);
+        }
+    }
+}
+
 fn report(name: &str, train: &[(f64, bool)], heldout: &[(f64, bool)]) -> (f64, f64, f64) {
     let (t, tc, tf) = best_operating_point(train);
     let (hc, hf) = operating_point_at(heldout, t);
@@ -75,7 +86,9 @@ fn main() -> anyhow::Result<()> {
     let flip = |v: &[(f64, bool)]| -> Vec<(f64, bool)> {
         v.iter().map(|(s, c)| (1.0 - s, *c)).collect()
     };
-    report("ssim", &flip(&split.train_ssim), &flip(&split.heldout_ssim));
+    let heldout_ssim = flip(&split.heldout_ssim);
+    let (ssim_t, _, _) = report("ssim", &flip(&split.train_ssim), &heldout_ssim);
+    dump_misses(&heldout_ssim, &split.heldout, ssim_t);
 
     let device: Device<AB> = Default::default();
     let mut model = DiffStackModel::<AB>::init(&device);
@@ -113,6 +126,7 @@ fn main() -> anyhow::Result<()> {
         .zip(split.heldout.iter().map(|i| i.changed))
         .collect();
     let (t, hc, hf) = report("diff-stack", &train_scored, &heldout_scored);
+    dump_misses(&heldout_scored, &split.heldout, t);
 
     std::fs::create_dir_all(&out)?;
     valid.save_file(out.join("effect-model"), &CompactRecorder::new())?;

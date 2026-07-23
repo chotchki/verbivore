@@ -19,6 +19,9 @@ pub struct PairItem {
     pub before: Vec<f32>,
     pub after: Vec<f32>,
     pub changed: bool,
+    /// Provenance for misclassification reports; None click = control pair.
+    pub url: String,
+    pub click: Option<(f64, f64)>,
 }
 
 pub struct PairSplit {
@@ -89,6 +92,8 @@ pub fn load_visible_split(pairs: &PairDataset) -> Result<PairSplit> {
             before: to_chw(&before_png).with_context(|| format!("pair {id} before"))?,
             after: to_chw(&after_png).with_context(|| format!("pair {id} after"))?,
             changed,
+            url: meta.url.clone(),
+            click: meta.click,
         };
         let mssim = crate::mssim_png(&before_png, &after_png)?;
         let heldout = url_bucket(&meta.url) < 2;
