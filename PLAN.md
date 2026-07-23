@@ -33,6 +33,7 @@ This PLAN.md is driven by `claude-plan-bridge` (FORMATv2):
 - [ ] 2.9 - Held-out app eval against the 80% top-1 gate
   - [x] 2.9.1 - Pipeline proven on real data: bias prior tames focal start (49.6 vs 19.7k), loss 4.5 @ 60 epochs; cross-app mAP 0.001 from a 4-layout corpus (honest baseline, matched-IoU 0.62)
   - [ ] 2.9.2 - Corpus breadth: more pages + at least 2 more apps, retrain, re-eval the gate
+  - [ ] 2.9.3 - Leave-one-app-out rotation (k-fold at app granularity): k trainings each holding out a different app, report mean mAP + spread — the honest error bar for unseen-app generalization
 
 ## Phase 3 - Effect validation
 - [ ] 3.1 - Before/after pair capture around CDP actions
