@@ -38,8 +38,10 @@ pub struct ActionPair {
     /// is near the settle window (measured: a 600ms ticker under a 600ms
     /// window mislabeled dead clicks Changed).
     pub signals: ActionSignals,
-    /// What the page did on its own in an equal window BEFORE the action —
-    /// animations, timers, analytics. The noise floor the label is judged above.
+    /// What the page did on its own BEFORE the action (window of
+    /// `max(settle_ms, AMBIENT_MIN_MS)` — longer than the action window is
+    /// fine, the suppression list just gets more complete). The noise floor
+    /// the label is judged above.
     pub ambient: ActionSignals,
 }
 
@@ -131,6 +133,14 @@ pub(crate) async fn arm(page: &Page) -> Result<()> {
     Ok(())
 }
 
+/// The ambient window observes at least this long regardless of `settle_ms`.
+/// Suppression lists only get MORE complete with longer observation (unlike
+/// count subtraction, which needed equal windows), and a periodic source is
+/// guaranteed to register once the window covers a full period — 600ms
+/// windows were missing 750-900ms tickers, whose next tick then read as the
+/// click's doing.
+const AMBIENT_MIN_MS: u64 = 1500;
+
 /// Captures a pair around an optional click (None = no-action control pair).
 /// `settle_ms` is a fixed wait for v1 — replacing it with the effect model IS
 /// phase 3's plot.
@@ -139,10 +149,10 @@ pub(crate) async fn click_and_capture(
     click: Option<(f64, f64)>,
     settle_ms: u64,
 ) -> Result<ActionPair> {
-    // Control window first: same duration, no action. Whatever fires here is
-    // the page's own noise (animations, timers), not the click's doing — its
-    // targets become the suppression list for the action window.
-    tokio::time::sleep(std::time::Duration::from_millis(settle_ms)).await;
+    // Control window first, no action. Whatever fires here is the page's own
+    // noise (animations, timers), not the click's doing — its targets become
+    // the suppression list for the action window.
+    tokio::time::sleep(std::time::Duration::from_millis(settle_ms.max(AMBIENT_MIN_MS))).await;
     let ambient = read_signals(page, BEGIN_ACTION_JS).await?;
 
     let before_png = shot(page).await?;

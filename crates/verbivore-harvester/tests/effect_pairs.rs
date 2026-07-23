@@ -83,6 +83,34 @@ async fn periodic_ticker_does_not_alias_into_dead_clicks() -> anyhow::Result<()>
     Ok(())
 }
 
+/// Ticker SLOWER than the settle window (750ms vs 400ms): with an equal-length
+/// ambient window it sometimes never registers, and its next tick reads as
+/// the click's doing — the hole that made every rewired v3 sabotage click
+/// pass as Changed. The stretched ambient minimum must cover it.
+const SLOW_TICKER_FIXTURE: &str = "data:text/html,<html><body style=\"margin:0\">\
+    <div id=\"tick\">0</div>\
+    <script>let n=0;setInterval(()=>{document.getElementById('tick').textContent=String(++n)},750)</script>\
+    </body></html>";
+
+#[tokio::test]
+async fn slow_ticker_registers_as_ambient_before_the_action_window() -> anyhow::Result<()> {
+    let harvester = Harvester::launch().await?;
+    // Several captures: the old failure was phase-dependent (~20% per capture),
+    // so one lucky pass must not green the test.
+    for attempt in 0..4 {
+        let pair = harvester
+            .capture_action_pair(SLOW_TICKER_FIXTURE, Some((500.0, 500.0)), 400)
+            .await?;
+        assert_eq!(
+            pair.signals.dom_mutations, 0,
+            "slow ticker leaked into dead click (attempt {attempt}): {:?}",
+            pair.signals
+        );
+    }
+    harvester.close().await?;
+    Ok(())
+}
+
 #[tokio::test]
 async fn network_only_click_is_visible_to_signals() -> anyhow::Result<()> {
     let harvester = Harvester::launch().await?;
