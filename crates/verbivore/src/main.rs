@@ -11,6 +11,16 @@ struct Cli {
     cmd: Cmd,
 }
 
+/// Impl #1 of the EffectJudge seam: the burn diff-stack gate. Adapted HERE in
+/// the glue crate so the executor never grows an ML-framework dep.
+struct BurnJudge(verbivore_effect::gate::EffectGate<burn::backend::Wgpu>);
+
+impl verbivore_executor::EffectJudge for BurnJudge {
+    fn saw_change(&self, before: &[u8], after: &[u8]) -> anyhow::Result<(f64, bool)> {
+        self.0.saw_change(before, after)
+    }
+}
+
 #[derive(Subcommand)]
 enum Cmd {
     /// Print sample/label counts for a harvested dataset
@@ -61,6 +71,12 @@ enum Cmd {
         /// Settle window in ms
         #[arg(long, default_value_t = 600)]
         settle_ms: u64,
+        /// Effect-gate checkpoint dir; the run gates signals OR visual
+        #[arg(long)]
+        ckpt: Option<PathBuf>,
+        /// On breakage, write a diagnostic bundle under this dir
+        #[arg(long)]
+        diagnostics: Option<PathBuf>,
     },
     /// Sabotage harness: click each element for real, then rewired to dead
     /// pixels, and check the signals-OR-visual gate notices the difference
@@ -129,6 +145,8 @@ async fn main() -> Result<()> {
             id,
             allow_candidate,
             settle_ms,
+            ckpt,
+            diagnostics,
         } => {
             let store = verbivore_verb::VerbStore::open(verbs)?;
             let record = store.load(&app, &id)?;
@@ -137,19 +155,31 @@ async fn main() -> Result<()> {
                 allow_candidates: allow_candidate,
                 ..Default::default()
             };
-            let executor = verbivore_executor::Executor::launch().await?;
+            let mut executor = verbivore_executor::Executor::launch().await?;
+            if let Some(ckpt) = ckpt {
+                let device = Default::default();
+                executor.judge = Some(Box::new(BurnJudge(
+                    verbivore_effect::gate::EffectGate::<burn::backend::Wgpu>::load(
+                        &ckpt, &device,
+                    )?,
+                )));
+            }
             let run = executor.run(&record, &ctx).await?;
             executor.close().await?;
             for (i, step) in run.steps.iter().enumerate() {
                 println!(
-                    "step {i}: {:?} at {:?} -> {:?} ({:?})",
-                    step.action, step.clicked, step.effect_label, step.signals
+                    "step {i}: {:?} at {:?} -> {:?} visual={:?} ({:?})",
+                    step.action, step.clicked, step.effect_label, step.visual, step.signals
                 );
             }
             match &run.verdict {
                 verbivore_executor::RunVerdict::Passed => println!("{id}: PASSED"),
                 verbivore_executor::RunVerdict::Broken { breakage } => {
                     println!("{id}: BROKEN {}", serde_json::to_string(breakage)?);
+                    if let Some(dir) = diagnostics {
+                        let bundle = verbivore_executor::write_diagnostics(&run, dir)?;
+                        println!("diagnostics -> {}", bundle.display());
+                    }
                     anyhow::bail!("verb {id} broke");
                 }
             }

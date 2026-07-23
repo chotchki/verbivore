@@ -79,8 +79,9 @@ pub struct StepReport {
     pub clicked: Option<(f64, f64)>,
     pub signals: ActionSignals,
     pub effect_label: EffectLabel,
-    /// Captured around the action for 4.4's visual gate; not serialized —
-    /// the diagnostic bundle decides what to persist.
+    /// The visual channel's (score, saw_change) — None when no judge is set.
+    pub visual: Option<(f64, bool)>,
+    /// Raw pair; not serialized — the diagnostic bundle persists them as pngs.
     #[serde(skip)]
     pub before_png: Vec<u8>,
     #[serde(skip)]
@@ -99,6 +100,15 @@ pub struct VerbRun {
 pub enum RunVerdict {
     Passed,
     Broken { breakage: Breakage },
+}
+
+/// The visual half of the effect gate, as a seam: the executor never knows
+/// what's judging — burn checkpoint, ONNX import, cloud call. Local models
+/// are impl #1 (the CLI adapts `verbivore-effect`'s gate to this). The trait
+/// is the boundary where optionality STOPS: inside an impl, commit to a stack.
+pub trait EffectJudge: Send + Sync {
+    /// (score, saw_change) for a before/after png pair.
+    fn saw_change(&self, before_png: &[u8], after_png: &[u8]) -> Result<(f64, bool)>;
 }
 
 /// A registered quirk impl: full page access, owns its own waiting.
@@ -123,6 +133,23 @@ impl CustomRegistry {
 pub struct Executor {
     harvester: Harvester,
     pub registry: CustomRegistry,
+    /// The visual channel. None = signals-only gating (canvas effects
+    /// invisible); the runtime gate is signals OR visual when present.
+    pub judge: Option<Box<dyn EffectJudge>>,
+}
+
+/// Persists a run for postmortem under `<dir>/<verb_id>/`: run.json (verdict,
+/// per-step signals + visual scores) plus the step-N before/after pngs — what
+/// a human (or the repair loop) needs to see what the gate saw.
+pub fn write_diagnostics(run: &VerbRun, dir: impl AsRef<std::path::Path>) -> Result<std::path::PathBuf> {
+    let bundle = dir.as_ref().join(&run.verb_id);
+    std::fs::create_dir_all(&bundle)?;
+    std::fs::write(bundle.join("run.json"), serde_json::to_string_pretty(run)?)?;
+    for (i, step) in run.steps.iter().enumerate() {
+        std::fs::write(bundle.join(format!("step-{i}.before.png")), &step.before_png)?;
+        std::fs::write(bundle.join(format!("step-{i}.after.png")), &step.after_png)?;
+    }
+    Ok(bundle)
 }
 
 fn variation_for(rendering: &RenderingContext) -> Result<Variation> {
@@ -179,6 +206,7 @@ impl Executor {
         Ok(Self {
             harvester: Harvester::launch().await?,
             registry: CustomRegistry::default(),
+            judge: None,
         })
     }
 
@@ -300,26 +328,47 @@ impl Executor {
             let after_png = effect_capture::shot(page).await?;
             let signals = effect_capture::read_action(page).await?;
             let effect_label = label_from_signals(&signals);
+            let visual = match &self.judge {
+                Some(judge) => Some(
+                    judge
+                        .saw_change(&before_png, &after_png)
+                        .with_context(|| format!("effect judge, step {i}"))?,
+                ),
+                None => None,
+            };
 
             let report = StepReport {
                 action: step.action.clone(),
                 clicked: click_css,
                 signals: signals.clone(),
                 effect_label,
+                visual,
                 before_png,
                 after_png,
             };
             let navigated = signals.navigated;
             steps.push(report);
 
-            match (step.expect, effect_label) {
-                (EffectExpectation::Change, EffectLabel::NoChange) => {
-                    return broken(steps, Breakage::EffectSilence { step: i });
+            // The gate is deliberately asymmetric. Change: signals OR visual —
+            // either channel proves life, silence on both = dead click.
+            // NoChange: signals ONLY — proving stillness visually on an
+            // animated page is where the model is weakest (focus rings sit
+            // right at its threshold; measured live on the fixture), and a
+            // borderline visual score must not break a signal-verified no-op.
+            match step.expect {
+                EffectExpectation::Change => {
+                    let alive = effect_label == EffectLabel::Changed
+                        || visual.is_some_and(|(_, saw)| saw);
+                    if !alive {
+                        return broken(steps, Breakage::EffectSilence { step: i });
+                    }
                 }
-                (EffectExpectation::NoChange, EffectLabel::Changed) => {
-                    return broken(steps, Breakage::UnexpectedEffect { step: i });
+                EffectExpectation::NoChange => {
+                    if effect_label == EffectLabel::Changed {
+                        return broken(steps, Breakage::UnexpectedEffect { step: i });
+                    }
                 }
-                _ => {}
+                EffectExpectation::DontCare => {}
             }
             if navigated {
                 // The document was replaced; give the new one a beat to land

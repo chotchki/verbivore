@@ -191,3 +191,67 @@ async fn custom_action_runs_when_registered_and_breaks_typed_when_not() -> anyho
     assert!(run.steps[0].signals.dom_mutations > 0, "quirk must land its effect");
     Ok(())
 }
+
+/// A judge that always claims change — canvas-effect stand-in where signals
+/// stay silent but pixels moved.
+struct AlwaysChanged;
+impl verbivore_executor::EffectJudge for AlwaysChanged {
+    fn saw_change(&self, _b: &[u8], _a: &[u8]) -> anyhow::Result<(f64, bool)> {
+        Ok((0.99, true))
+    }
+}
+
+#[tokio::test]
+async fn visual_channel_rescues_signal_silent_changes() -> anyhow::Result<()> {
+    // "Do nothing" is signal-silent; expecting Change breaks signals-only but
+    // must PASS once a judge vouches for pixels — the OR-gate, both ways.
+    let mut record = record(
+        vec![click("Do nothing", "canvas-ish click", EffectExpectation::Change)],
+        vec![],
+    );
+    record.id = "canvas-standin".into();
+
+    let mut executor = Executor::launch().await?;
+    let signals_only = executor.run(&record, &ExecutionContext::default()).await?;
+    assert_eq!(
+        signals_only.verdict,
+        RunVerdict::Broken { breakage: Breakage::EffectSilence { step: 0 } }
+    );
+
+    executor.judge = Some(Box::new(AlwaysChanged));
+    let with_judge = executor.run(&record, &ExecutionContext::default()).await?;
+    executor.close().await?;
+
+    assert_eq!(with_judge.verdict, RunVerdict::Passed, "run: {with_judge:?}");
+    assert_eq!(with_judge.steps[0].visual, Some((0.99, true)));
+    Ok(())
+}
+
+#[tokio::test]
+async fn breakage_writes_a_diagnostic_bundle() -> anyhow::Result<()> {
+    let mut record = record(
+        vec![
+            click("Toggle details", "details toggle", EffectExpectation::Change),
+            click("Do nothing", "doomed expectation", EffectExpectation::Change),
+        ],
+        vec![],
+    );
+    record.id = "doomed".into();
+    let executor = Executor::launch().await?;
+    let run = executor.run(&record, &ExecutionContext::default()).await?;
+    executor.close().await?;
+    assert_eq!(
+        run.verdict,
+        RunVerdict::Broken { breakage: Breakage::EffectSilence { step: 1 } }
+    );
+
+    let dir = tempfile::tempdir()?;
+    let bundle = verbivore_executor::write_diagnostics(&run, dir.path())?;
+    let report: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(bundle.join("run.json"))?)?;
+    assert_eq!(report["verdict"]["breakage"]["kind"], "effect-silence");
+    for name in ["step-0.before.png", "step-0.after.png", "step-1.before.png", "step-1.after.png"] {
+        assert!(bundle.join(name).exists(), "missing {name}");
+    }
+    Ok(())
+}

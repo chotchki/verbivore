@@ -7179,6 +7179,8 @@ dependencies = [
  "chromiumoxide",
  "futures",
  "serde",
+ "serde_json",
+ "tempfile",
  "tokio",
  "verbivore-dataset",
  "verbivore-harvester",
