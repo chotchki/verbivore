@@ -4,6 +4,48 @@
 use crate::data::NUM_CLASSES;
 use crate::decode::{Detection, iou};
 
+/// Eval decodes near-zero threshold: mAP judges the full ranking; a runtime
+/// threshold would truncate the PR curve before it's measured.
+pub fn eval_decode_config() -> crate::decode::DecodeConfig {
+    crate::decode::DecodeConfig {
+        score_threshold: 0.05,
+        max_detections: 300,
+        ..Default::default()
+    }
+}
+
+/// Runs a model over a whole dataset and returns the filled accumulator.
+pub fn evaluate_model<B: burn::prelude::Backend>(
+    model: &crate::model::GroundingModel<B>,
+    dataset: &crate::data::GroundingDataset,
+    device: &burn::prelude::Device<B>,
+) -> EvalAccumulator {
+    use burn::data::dataloader::batcher::Batcher;
+    use burn::data::dataset::Dataset as BurnDataset;
+    let cfg = eval_decode_config();
+    let mut acc = EvalAccumulator::default();
+    let mut buffered = Vec::new();
+    let flush = |items: &mut Vec<crate::data::GroundingItem>, acc: &mut EvalAccumulator| {
+        if items.is_empty() {
+            return;
+        }
+        let batch: crate::data::GroundingBatch<B> =
+            crate::data::GroundingBatcher.batch(std::mem::take(items), device);
+        let dets = crate::decode::decode(&model.forward(batch.images), &cfg);
+        for ((dets, gt_boxes), gt_classes) in dets.iter().zip(&batch.boxes).zip(&batch.classes) {
+            acc.observe(dets, gt_boxes, gt_classes);
+        }
+    };
+    for i in 0..BurnDataset::len(dataset) {
+        buffered.push(BurnDataset::get(dataset, i).unwrap());
+        if buffered.len() == 8 {
+            flush(&mut buffered, &mut acc);
+        }
+    }
+    flush(&mut buffered, &mut acc);
+    acc
+}
+
 const MATCH_IOU: f32 = 0.5;
 
 #[derive(Debug, Default, Clone)]

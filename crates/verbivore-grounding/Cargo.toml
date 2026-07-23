@@ -29,3 +29,7 @@ path = "src/bin/train_bench.rs"
 [[bin]]
 name = "train-eval"
 path = "src/bin/train_eval.rs"
+
+[[bin]]
+name = "eval-ckpt"
+path = "src/bin/eval_ckpt.rs"

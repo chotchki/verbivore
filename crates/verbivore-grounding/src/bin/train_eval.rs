@@ -3,11 +3,8 @@
 //!
 //!   cargo run -p verbivore-grounding --bin train-eval -- <train_dir> <heldout_dir> [epochs]
 
-use burn::data::dataloader::batcher::Batcher;
-use burn::data::dataset::Dataset as BurnDataset;
-use verbivore_grounding::data::{GroundingBatcher, GroundingDataset};
-use verbivore_grounding::decode::{DecodeConfig, decode};
-use verbivore_grounding::eval::EvalAccumulator;
+use verbivore_grounding::data::GroundingDataset;
+use verbivore_grounding::eval::evaluate_model;
 use verbivore_grounding::train::{TrainConfig, train, valid_model};
 
 type AB = burn::backend::Autodiff<burn::backend::Wgpu>;
@@ -29,33 +26,7 @@ fn main() -> anyhow::Result<()> {
     let model = valid_model(&outcome.model);
 
     let heldout = GroundingDataset::open(&heldout_dir)?;
-    let mut acc = EvalAccumulator::default();
-    // Eval decodes near-zero threshold: mAP judges the full ranking, and the
-    // runtime default (0.3) would truncate the PR curve before it's measured.
-    let decode_cfg = DecodeConfig {
-        score_threshold: 0.05,
-        max_detections: 300,
-        ..DecodeConfig::default()
-    };
-    let mut buffered = Vec::new();
-    let flush = |items: &mut Vec<_>, acc: &mut EvalAccumulator| {
-        if items.is_empty() {
-            return;
-        }
-        let batch = GroundingBatcher.batch(std::mem::take(items), &device);
-        let dets = decode(&model.forward(batch.images), &decode_cfg);
-        for ((dets, gt_boxes), gt_classes) in dets.iter().zip(&batch.boxes).zip(&batch.classes) {
-            acc.observe(dets, gt_boxes, gt_classes);
-        }
-    };
-    for i in 0..BurnDataset::len(&heldout) {
-        buffered.push(BurnDataset::get(&heldout, i).unwrap());
-        if buffered.len() == 8 {
-            flush(&mut buffered, &mut acc);
-        }
-    }
-    flush(&mut buffered, &mut acc);
-
+    let acc = evaluate_model(&model, &heldout, &device);
     println!(
         "heldout: mAP@0.5={:.3} matched-IoU={:.3}",
         acc.map50(),
