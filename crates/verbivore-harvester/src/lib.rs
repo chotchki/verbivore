@@ -1,13 +1,23 @@
 //! Drives Chrome via chromiumoxide to harvest auto-labeled training data: the DOM
 //! provides bounding boxes + roles at capture time so no human ever annotates.
 
+pub mod labels;
+
 use anyhow::{Context, Result, anyhow};
 use chromiumoxide::browser::{Browser, BrowserConfig};
-use chromiumoxide::cdp::browser_protocol::accessibility::{AxValue, GetFullAxTreeParams};
+use chromiumoxide::cdp::browser_protocol::accessibility::GetFullAxTreeParams;
+use chromiumoxide::cdp::browser_protocol::emulation::SetDeviceMetricsOverrideParams;
 use chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotFormat;
 use chromiumoxide::page::ScreenshotParams;
 use futures::StreamExt;
 use tokio::task::JoinHandle;
+
+pub use labels::{Bbox, ElementLabel};
+
+/// Fixed capture viewport. Labels are only valid against screenshots taken at
+/// exactly this size with DPR 1 — the pair is the dataset contract.
+pub const VIEWPORT_W: i64 = 1280;
+pub const VIEWPORT_H: i64 = 800;
 
 /// One captured page: the raw inputs every downstream stage feeds on.
 #[derive(Debug)]
@@ -15,6 +25,7 @@ pub struct PageSnapshot {
     pub screenshot_png: Vec<u8>,
     pub html: String,
     pub ax_nodes: Vec<AxSummary>,
+    pub labels: Vec<ElementLabel>,
 }
 
 /// Accessibility node cut down to what grounding needs; the full AXNode carries
@@ -55,28 +66,47 @@ impl Harvester {
         })
     }
 
-    /// Navigates a fresh tab and captures screenshot + HTML + accessibility tree.
+    /// Navigates a fresh tab and captures screenshot + HTML + a11y tree + labels.
     pub async fn snapshot(&self, url: &str) -> Result<PageSnapshot> {
-        let page = self.browser.new_page(url).await?;
+        let page = self.browser.new_page("about:blank").await?;
+        // DPR forced to 1 BEFORE navigation so layout and screenshot agree.
+        page.execute(
+            SetDeviceMetricsOverrideParams::builder()
+                .width(VIEWPORT_W)
+                .height(VIEWPORT_H)
+                .device_scale_factor(1.0)
+                .mobile(false)
+                .build()
+                .map_err(|e| anyhow!("device metrics: {e}"))?,
+        )
+        .await?;
+        page.goto(url).await?;
         page.wait_for_navigation().await?;
+
         let screenshot_png = page
             .screenshot(
                 ScreenshotParams::builder()
                     .format(CaptureScreenshotFormat::Png)
-                    .full_page(true)
                     .build(),
             )
             .await?;
         let html = page.content().await?;
         let ax = page.execute(GetFullAxTreeParams::default()).await?;
+        let labels = labels::extract(
+            &page,
+            &ax.result.nodes,
+            VIEWPORT_W as f64,
+            VIEWPORT_H as f64,
+        )
+        .await?;
         let ax_nodes = ax
             .result
             .nodes
             .iter()
             .filter(|n| !n.ignored)
             .map(|n| AxSummary {
-                role: ax_str(n.role.as_ref()),
-                name: ax_str(n.name.as_ref()),
+                role: labels::ax_str(n.role.as_ref()),
+                name: labels::ax_str(n.name.as_ref()),
             })
             .collect();
         page.close().await?;
@@ -84,6 +114,7 @@ impl Harvester {
             screenshot_png,
             html,
             ax_nodes,
+            labels,
         })
     }
 
@@ -94,9 +125,4 @@ impl Harvester {
         self.handler_task.await.ok();
         Ok(())
     }
-}
-
-fn ax_str(v: Option<&AxValue>) -> Option<String> {
-    v.and_then(|v| v.value.as_ref())
-        .and_then(|j| j.as_str().map(str::to_owned))
 }

@@ -23,5 +23,9 @@ async fn snapshots_the_grafana_demo_dashboard() -> anyhow::Result<()> {
         !snap.ax_nodes.is_empty(),
         "no accessibility nodes from a live dashboard"
     );
+    assert!(
+        !snap.labels.is_empty(),
+        "no interactive labels from a live dashboard"
+    );
     Ok(())
 }
