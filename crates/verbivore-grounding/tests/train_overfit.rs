@@ -50,6 +50,7 @@ fn overfits_two_synthetic_screenshots() -> anyhow::Result<()> {
                 role: "button".into(),
                 name: None,
             }],
+            Vec::new(),
             &rect_png(640, 640, rect),
         )?;
     }

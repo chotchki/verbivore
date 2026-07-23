@@ -55,6 +55,7 @@ fn loads_letterboxed_items_with_class_indices() -> anyhow::Result<()> {
             // A role outside the class list must be skipped, not guessed.
             label("figure", 0.0, 0.0, 10.0, 10.0),
         ],
+        Vec::new(),
         &png(200, 100, [255, 0, 0]),
     )?;
 
@@ -88,6 +89,7 @@ fn cached_open_returns_identical_items() -> anyhow::Result<()> {
         100,
         1.0,
         vec![label("button", 50.0, 25.0, 100.0, 50.0)],
+        Vec::new(),
         &png(200, 100, [255, 0, 0]),
     )?;
 
@@ -112,6 +114,7 @@ fn batcher_stacks_images_and_keeps_targets_ragged() -> anyhow::Result<()> {
         100,
         1.0,
         vec![label("button", 0.0, 0.0, 20.0, 20.0)],
+        Vec::new(),
         &png(200, 100, [10, 20, 30]),
     )?;
     ds.add(
@@ -123,6 +126,7 @@ fn batcher_stacks_images_and_keeps_targets_ragged() -> anyhow::Result<()> {
             label("link", 0.0, 0.0, 20.0, 20.0),
             label("tab", 5.0, 5.0, 20.0, 20.0),
         ],
+        Vec::new(),
         &png(100, 200, [40, 50, 60]),
     )?;
 

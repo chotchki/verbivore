@@ -106,6 +106,12 @@ pub struct SampleMeta {
     pub dpr: f64,
     pub captured_at_unix: u64,
     pub labels: Vec<ElementLabel>,
+    /// Screenshot-px regions that LOOK interactive (cursor/tabindex/handler
+    /// heuristics) but carry no a11y labeling. Excluded from training loss —
+    /// uncertainty must not be taught as background. Default keeps every
+    /// pre-upgrade sidecar parseable.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ignore: Vec<Bbox>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -330,6 +336,7 @@ impl Dataset {
         Ok(Self { root })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn add(
         &self,
         url: &str,
@@ -337,14 +344,11 @@ impl Dataset {
         viewport_h: i64,
         dpr: f64,
         labels: Vec<ElementLabel>,
+        ignore: Vec<Bbox>,
         png: &[u8],
     ) -> Result<AddOutcome> {
         let id = hex16(&Sha256::digest(png));
         let meta_path = self.meta_path(&id);
-        if meta_path.exists() {
-            return Ok(AddOutcome { id, deduped: true });
-        }
-        fs::write(self.png_path(&id), png)?;
         let meta = SampleMeta {
             id: id.clone(),
             url: url.to_owned(),
@@ -356,7 +360,17 @@ impl Dataset {
                 .map(|d| d.as_secs())
                 .unwrap_or(0),
             labels,
+            ignore,
         };
+        if meta_path.exists() {
+            // Same pixels, fresher labeling: the sidecar is the labeler's
+            // OUTPUT, and labeler upgrades (ignore-regions!) must reach
+            // already-captured samples on re-harvest. Timestamp aside, the
+            // content is deterministic for identical pixels.
+            fs::write(meta_path, serde_json::to_vec_pretty(&meta)?)?;
+            return Ok(AddOutcome { id, deduped: true });
+        }
+        fs::write(self.png_path(&id), png)?;
         // Meta is written after the png: a sidecar implies its image exists.
         fs::write(meta_path, serde_json::to_vec_pretty(&meta)?)?;
         Ok(AddOutcome { id, deduped: false })
@@ -456,6 +470,7 @@ mod tests {
             800,
             1.0,
             vec![label("button"), label("link")],
+            Vec::new(),
             b"fake png bytes",
         )?;
         assert!(!out.deduped);
@@ -475,14 +490,16 @@ mod tests {
     fn dedupes_identical_screenshots() -> Result<()> {
         let dir = tempfile::tempdir()?;
         let ds = Dataset::create(dir.path())?;
-        let first = ds.add("http://a/", 1280, 800, 1.0, vec![label("button")], b"same png")?;
-        let second = ds.add("http://b/", 1280, 800, 1.0, vec![label("link")], b"same png")?;
+        let first = ds.add("http://a/", 1280, 800, 1.0, vec![label("button")], Vec::new(), b"same png")?;
+        let second = ds.add("http://b/", 1280, 800, 1.0, vec![label("link")], Vec::new(), b"same png")?;
         assert!(!first.deduped);
         assert!(second.deduped);
         assert_eq!(first.id, second.id);
         assert_eq!(ds.sample_ids()?.len(), 1);
-        // First capture wins, the dupe's labels are dropped.
-        assert_eq!(ds.meta(&first.id)?.labels[0].role, "button");
+        // Identical pixels, ONE sample — but the sidecar refreshes: labeling
+        // is the labeler's output and upgrades (ignore-regions) must reach
+        // already-captured samples on re-harvest.
+        assert_eq!(ds.meta(&first.id)?.labels[0].role, "link");
         Ok(())
     }
 
@@ -556,9 +573,10 @@ mod tests {
             800,
             1.0,
             vec![label("button"), label("button"), label("link")],
+            Vec::new(),
             b"png one",
         )?;
-        ds.add("http://y/", 1280, 800, 1.0, vec![label("tab")], b"png two")?;
+        ds.add("http://y/", 1280, 800, 1.0, vec![label("tab")], Vec::new(), b"png two")?;
         let stats = ds.stats()?;
         assert_eq!(stats.samples, 2);
         assert_eq!(stats.labels, 4);

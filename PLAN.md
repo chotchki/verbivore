@@ -23,8 +23,8 @@ This PLAN.md is driven by `claude-plan-bridge` (FORMATv2):
 
 MEASURED MOTIVATION (v4, 2026-07-23): +100 epochs and +18 deep-page samples replicated v3 (mAP 0.032 vs 0.040, loss 0.92->0.60 = overfit bending), same-app page mining dedupes to nothing; NEW APPS are the only remaining lever. Labeler upgrade comes FIRST — a11y quality is a gradient (per chris) and new apps with thinner a11y would turn missing labels into false-negative training data that teaches the model supervised blindness.
 
-- [ ] 6.1 - Labeler upgrade: interaction heuristics (cursor:pointer, tabindex, click handlers) find what a11y missed -> IGNORE-REGIONS excluded from loss, not taught as negatives; dataset format grows an ignore field (backward-compatible), grounding loss masks ignored cells
-- [ ] 6.2 - Label-density page filter + per-app quality report (heuristic-found vs a11y-labeled ratio; low-ratio pages skipped, the report names them)
+- [x] 6.1 - Labeler upgrade: interaction heuristics (cursor:pointer ROOTS only — the style inherits, tabindex, onclick, bare anchors) find what a11y missed -> IGNORE-REGIONS excluded from loss; SampleMeta.ignore (serde-default, old sidecars parse), dedupe now REFRESHES sidecars (labeling is labeler output, upgrades must reach captured samples), neg-focal masked at ignored cells (positives untouched — tested both directions). Known blind spot documented: addEventListener is invisible to a DOM scan, coverage is an upper bound
+- [x] 6.2 - Label-density page filter: label_coverage on every snapshot, harvest_variations skips below 0.5 and counts low_density in the sweep outcome; div-soup fixture test pins the gate
 - [ ] 6.3 - New corpus apps in docker compose, pinned + headlessly seeded: Superset (ECharts — also the canvas stand-in), Metabase, Ghost, Matomo (Discourse skipped: compose complexity is not worth one design system)
 - [ ] 6.4 - Crawler-driven harvest frontier: discover-urls mode reuses the 5.1 BFS so per-app url lists stop being hand-curated
 - [ ] 6.5 - Harvest sweep across new apps (variation grid) + merge, with the 6.2 report gating what enters training

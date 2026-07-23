@@ -51,6 +51,9 @@ pub struct GroundingItem {
     /// xyxy in input px, parallel to `classes`.
     pub boxes: Vec<[f32; 4]>,
     pub classes: Vec<i64>,
+    /// xyxy in input px: looks-interactive-but-unlabeled regions. The loss
+    /// must not teach these as background.
+    pub ignore: Vec<[f32; 4]>,
 }
 
 /// Burn-facing view of a harvested dataset directory.
@@ -132,6 +135,7 @@ fn item_from_parts(img: &RgbImage, meta: &SampleMeta) -> GroundingItem {
         image: image_buf,
         boxes,
         classes,
+        ignore: meta.ignore.iter().map(|b| lb.apply(*b)).collect(),
     }
 }
 
@@ -155,12 +159,13 @@ impl burn::data::dataset::Dataset<GroundingItem> for GroundingDataset {
     }
 }
 
-/// Images stack; boxes/classes stay ragged per item — the loss walks them.
+/// Images stack; boxes/classes/ignore stay ragged per item — the loss walks them.
 #[derive(Debug, Clone)]
 pub struct GroundingBatch<B: Backend> {
     pub images: Tensor<B, 4>,
     pub boxes: Vec<Vec<[f32; 4]>>,
     pub classes: Vec<Vec<i64>>,
+    pub ignore: Vec<Vec<[f32; 4]>>,
 }
 
 #[derive(Clone, Default)]
@@ -173,16 +178,19 @@ impl<B: Backend> Batcher<B, GroundingItem, GroundingBatch<B>> for GroundingBatch
         let mut flat = Vec::with_capacity(n * 3 * side * side);
         let mut boxes = Vec::with_capacity(n);
         let mut classes = Vec::with_capacity(n);
+        let mut ignore = Vec::with_capacity(n);
         for item in items {
             flat.extend_from_slice(&item.image);
             boxes.push(item.boxes);
             classes.push(item.classes);
+            ignore.push(item.ignore);
         }
         let images = Tensor::from_data(TensorData::new(flat, [n, 3, side, side]), device);
         GroundingBatch {
             images,
             boxes,
             classes,
+            ignore,
         }
     }
 }

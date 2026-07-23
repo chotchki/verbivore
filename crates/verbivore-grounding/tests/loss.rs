@@ -13,6 +13,7 @@ fn one_box_targets<Back: Backend>(device: &Back::Device) -> Targets<Back> {
     build_targets(
         &[vec![[8.0, 8.0, 24.0, 24.0]]],
         &[vec![0]],
+        &[vec![]],
         GRID,
         device,
     )
@@ -93,4 +94,54 @@ fn loss_backpropagates() {
         heatmap.grad(&grads).is_some(),
         "heatmap must receive gradients"
     );
+}
+
+#[test]
+fn ignore_region_silences_negatives_but_not_positives() {
+    let device = Default::default();
+    // Same single box, plus an ignore-region over cells ~(8..12, 8..12) —
+    // far from the labeled object at cell (4,4).
+    let with_ignore: Targets<B> = build_targets(
+        &[vec![[8.0, 8.0, 24.0, 24.0]]],
+        &[vec![0]],
+        &[vec![[32.0, 32.0, 48.0, 48.0]]],
+        GRID,
+        &device,
+    );
+    let without: Targets<B> = one_box_targets(&device);
+
+    // A model screaming "button!" inside the ignore box: punished without the
+    // mask, free with it.
+    let mut confident = without.heatmap.zeros_like().to_data().to_vec::<f32>().unwrap();
+    for y in 8..12 {
+        for x in 8..12 {
+            confident[y * GRID + x] = 10.0; // class 0 plane
+        }
+    }
+    let pred = |t: &Targets<B>| Detections {
+        heatmap: Tensor::from_data(
+            burn::tensor::TensorData::new(
+                confident.clone(),
+                [1, verbivore_grounding::data::NUM_CLASSES, GRID, GRID],
+            ),
+            &device,
+        ) + perfect_prediction(t).heatmap,
+        sizes: t.sizes.clone(),
+        offsets: t.offsets.clone(),
+    };
+    let masked = detection_loss(&pred(&with_ignore), &with_ignore).into_scalar();
+    let unmasked = detection_loss(&pred(&without), &without).into_scalar();
+    assert!(
+        masked < unmasked / 10.0,
+        "ignore must silence the negative loss there: masked={masked} unmasked={unmasked}"
+    );
+
+    // The positive at (4,4) still teaches: a miss there must still hurt.
+    let blind = Detections {
+        heatmap: with_ignore.heatmap.zeros_like() - 10.0,
+        sizes: with_ignore.sizes.clone(),
+        offsets: with_ignore.offsets.clone(),
+    };
+    let miss = detection_loss(&blind, &with_ignore).into_scalar();
+    assert!(miss > 1.0, "missing the labeled object must still cost: {miss}");
 }

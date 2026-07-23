@@ -2,6 +2,7 @@
 //! provides bounding boxes + roles at capture time so no human ever annotates.
 
 pub mod effect_capture;
+pub mod heuristics;
 pub mod input;
 pub mod labels;
 
@@ -91,7 +92,14 @@ pub struct SweepOutcome {
     /// Captures that errored and were skipped (logged to stderr) — one hostile
     /// page must not kill a sweep.
     pub errors: usize,
+    /// Variations skipped by the label-density gate: too much of the page
+    /// looks interactive without a11y labeling to trust its negatives.
+    pub low_density: usize,
 }
+
+/// Below this label coverage a page teaches more blindness than detection —
+/// its unlabeled interactive surface overwhelms the ignore-region budget.
+pub const MIN_LABEL_COVERAGE: f64 = 0.5;
 
 /// One captured page: the raw inputs every downstream stage feeds on.
 #[derive(Debug)]
@@ -100,6 +108,12 @@ pub struct PageSnapshot {
     pub html: String,
     pub ax_nodes: Vec<AxSummary>,
     pub labels: Vec<ElementLabel>,
+    /// Interaction-looking regions with no covering a11y label (screenshot
+    /// px) — stored as loss-excluded ignore-regions, never as background.
+    pub ignore: Vec<verbivore_dataset::Bbox>,
+    /// Fraction of the interactive-looking surface the labels cover; the
+    /// density gate skips training pages below threshold.
+    pub label_coverage: f64,
 }
 
 /// Accessibility node cut down to what grounding needs; the full AXNode carries
@@ -164,12 +178,22 @@ impl Harvester {
         let mut outcome = SweepOutcome::default();
         for variation in variations {
             let snap = self.snapshot_with(url, variation).await?;
+            if snap.label_coverage < MIN_LABEL_COVERAGE {
+                eprintln!(
+                    "density gate: {url} at {:?} covers {:.0}% of its interactive-looking surface, skipping",
+                    variation.viewport,
+                    snap.label_coverage * 100.0
+                );
+                outcome.low_density += 1;
+                continue;
+            }
             let added = dataset.add(
                 url,
                 variation.viewport.0,
                 variation.viewport.1,
                 variation.dpr,
                 snap.labels,
+                snap.ignore,
                 &snap.screenshot_png,
             )?;
             if added.deduped {
@@ -259,6 +283,7 @@ impl Harvester {
         let ax = page.execute(GetFullAxTreeParams::default()).await?;
         let labels =
             labels::extract(&page, &ax.result.nodes, vw as f64, vh as f64, variation.dpr).await?;
+        let scan = heuristics::scan(&page, &labels, variation.dpr).await?;
         let ax_nodes = ax
             .result
             .nodes
@@ -275,6 +300,8 @@ impl Harvester {
             html,
             ax_nodes,
             labels,
+            label_coverage: scan.coverage(),
+            ignore: scan.uncovered,
         })
     }
 

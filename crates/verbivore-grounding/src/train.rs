@@ -74,7 +74,8 @@ pub fn train<B: AutodiffBackend>(
         let mut batches = 0usize;
 
         for batch in loader.iter() {
-            let targets = build_targets::<B>(&batch.boxes, &batch.classes, grid, device);
+            let targets =
+                build_targets::<B>(&batch.boxes, &batch.classes, &batch.ignore, grid, device);
             let pred = model.forward(batch.images);
             let loss = detection_loss(&pred, &targets);
             loss_sum += loss.clone().into_scalar().elem::<f64>();

@@ -67,7 +67,7 @@ fn main() -> anyhow::Result<()> {
         }
         let mut bytes = Vec::new();
         DynamicImage::ImageRgb8(img).write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
-        ds.add(&format!("bench://{i}"), 640, 640, 1.0, labels, &bytes)?;
+        ds.add(&format!("bench://{i}"), 640, 640, 1.0, labels, Vec::new(), &bytes)?;
     }
 
     println!("backend={BACKEND} samples={samples} epochs={epochs} batch={batch}");

@@ -24,6 +24,11 @@ pub struct Targets<B: Backend> {
     pub offsets: Tensor<B, 4>,
     /// [batch, 1, grid, grid] — 1.0 exactly at center cells.
     pub mask: Tensor<B, 4>,
+    /// [batch, 1, grid, grid] — 0.0 where a cell center falls inside an
+    /// ignore-region (looks interactive, no label), 1.0 elsewhere. Applied
+    /// to the NEGATIVE focal term only: uncertainty is not background, but
+    /// real labels near an ignore box keep their positives.
+    pub neg_mask: Tensor<B, 4>,
     /// Total center cells across the batch (the focal-loss normalizer).
     pub num_pos: usize,
 }
@@ -35,10 +40,12 @@ fn gaussian_radius(w_cells: f32, h_cells: f32) -> f32 {
     (0.35 * w_cells.min(h_cells)).max(1.0)
 }
 
-/// boxes: xyxy in input px, per image; classes parallel. grid = INPUT/stride.
+/// boxes: xyxy in input px, per image; classes parallel; ignore likewise.
+/// grid = INPUT/stride.
 pub fn build_targets<B: Backend>(
     boxes: &[Vec<[f32; 4]>],
     classes: &[Vec<i64>],
+    ignore: &[Vec<[f32; 4]>],
     grid: usize,
     device: &B::Device,
 ) -> Targets<B> {
@@ -48,7 +55,22 @@ pub fn build_targets<B: Backend>(
     let mut sizes = vec![0.0f32; batch * 2 * plane];
     let mut offsets = vec![0.0f32; batch * 2 * plane];
     let mut mask = vec![0.0f32; batch * plane];
+    let mut neg_mask = vec![1.0f32; batch * plane];
     let mut num_pos = 0usize;
+
+    let stride = OUTPUT_STRIDE as f32;
+    for (b, img_ignore) in ignore.iter().enumerate() {
+        for &[x0, y0, x1, y1] in img_ignore {
+            for gy in 0..grid {
+                for gx in 0..grid {
+                    let (cx, cy) = ((gx as f32 + 0.5) * stride, (gy as f32 + 0.5) * stride);
+                    if cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1 {
+                        neg_mask[b * plane + gy * grid + gx] = 0.0;
+                    }
+                }
+            }
+        }
+    }
 
     for (b, (img_boxes, img_classes)) in boxes.iter().zip(classes).enumerate() {
         for (bx, &class) in img_boxes.iter().zip(img_classes) {
@@ -101,6 +123,7 @@ pub fn build_targets<B: Backend>(
         sizes: Tensor::from_data(TensorData::new(sizes, [batch, 2, grid, grid]), device),
         offsets: Tensor::from_data(TensorData::new(offsets, [batch, 2, grid, grid]), device),
         mask: Tensor::from_data(TensorData::new(mask, [batch, 1, grid, grid]), device),
+        neg_mask: Tensor::from_data(TensorData::new(neg_mask, [batch, 1, grid, grid]), device),
         num_pos,
     }
 }
@@ -117,10 +140,13 @@ pub fn detection_loss<B: Backend>(pred: &Detections<B>, targets: &Targets<B>) ->
 
     let pos_loss = p.clone().neg().add_scalar(1.0).powf_scalar(FOCAL_ALPHA) * p.clone().log() * pos;
     let neg_weight = y.neg().add_scalar(1.0).powf_scalar(FOCAL_BETA);
+    // Ignore-regions silence the negative term only: a confident prediction
+    // inside one is neither rewarded nor punished.
     let neg_loss = p.clone().powf_scalar(FOCAL_ALPHA)
         * p.neg().add_scalar(1.0).log()
         * neg_weight
-        * neg;
+        * neg
+        * targets.neg_mask.clone().repeat_dim(1, NUM_CLASSES);
     let heat_loss = (pos_loss.sum() + neg_loss.sum()).neg() / n;
 
     let mask2 = targets.mask.clone().repeat_dim(1, 2);
