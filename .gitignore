@@ -1,3 +1,4 @@
 .claude/plan-bridge-state.json
 .claude/plan-bridge-state.json.lock
 target/
+/artifacts/
