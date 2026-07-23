@@ -16,4 +16,38 @@ curl -sf -X POST -u verbivore:verbivore123 \
     -d '{"name":"demo","description":"seeded demo repo","auto_init":true}' \
     >/dev/null || echo "gitea repo exists, skipping"
 
-echo "corpus seeded: grafana http://localhost:42001 gitea http://localhost:42002"
+# WordPress: run the installer + a couple of posts through wp-cli.
+if docker compose --profile seed run --rm wpcli wp core is-installed 2>/dev/null; then
+    echo "wordpress installed, skipping"
+else
+    docker compose --profile seed run --rm wpcli wp core install \
+        --url=http://localhost:42003 --title="Verbivore Test Blog" \
+        --admin_user=verbivore --admin_password=verbivore123 \
+        --admin_email=verbivore@example.com --skip-email
+    docker compose --profile seed run --rm wpcli wp post create \
+        --post_title="Digesting the web, one verb at a time" \
+        --post_content="A seeded post so harvested pages have real content, links and comment forms." \
+        --post_status=publish
+    docker compose --profile seed run --rm wpcli wp post create \
+        --post_type=page --post_title="About this corpus" \
+        --post_content="Seeded page for layout diversity." --post_status=publish
+fi
+
+# MediaWiki: sqlite install via the maintenance runner, then a second page.
+if docker compose exec mediawiki test -f /var/www/html/LocalSettings.php 2>/dev/null; then
+    echo "mediawiki installed, skipping"
+else
+    docker compose exec mediawiki php maintenance/run.php install \
+        --dbtype=sqlite --dbpath=/var/www/data \
+        --server=http://localhost:42004 --scriptpath="" \
+        --pass=verbivore123 Verbipedia verbivore
+    printf 'A seeded article with [[Main Page|a wiki link]] and some text for harvest diversity.' |
+        docker compose exec -T mediawiki php maintenance/run.php edit \
+            -u verbivore --summary seed "Corpus Article"
+fi
+
+echo "corpus seeded:"
+echo "  grafana   http://localhost:42001"
+echo "  gitea     http://localhost:42002"
+echo "  wordpress http://localhost:42003"
+echo "  mediawiki http://localhost:42004"

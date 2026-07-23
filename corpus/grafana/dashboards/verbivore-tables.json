@@ -1,0 +1,40 @@
+{
+  "title": "Verbivore Tables",
+  "uid": "verbivore-tables",
+  "schemaVersion": 39,
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Server Table",
+      "type": "table",
+      "datasource": { "type": "testdata" },
+      "gridPos": { "h": 10, "w": 14, "x": 0, "y": 0 },
+      "targets": [{ "refId": "A", "scenarioId": "random_walk_table" }]
+    },
+    {
+      "id": 2,
+      "title": "Bar Gauge",
+      "type": "bargauge",
+      "datasource": { "type": "testdata" },
+      "gridPos": { "h": 10, "w": 10, "x": 14, "y": 0 },
+      "targets": [{ "refId": "A", "scenarioId": "csv_metric_values", "stringInput": "72,31,54,90,12" }]
+    },
+    {
+      "id": 3,
+      "title": "Slice of Pie",
+      "type": "piechart",
+      "datasource": { "type": "testdata" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 10 },
+      "targets": [{ "refId": "A", "scenarioId": "csv_metric_values", "stringInput": "45,25,20,10" }]
+    },
+    {
+      "id": 4,
+      "title": "Trend",
+      "type": "timeseries",
+      "datasource": { "type": "testdata" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 10 },
+      "targets": [{ "refId": "A", "scenarioId": "random_walk" }]
+    }
+  ]
+}

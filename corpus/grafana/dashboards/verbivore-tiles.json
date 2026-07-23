@@ -1,0 +1,58 @@
+{
+  "title": "Verbivore Tiles",
+  "uid": "verbivore-tiles",
+  "schemaVersion": 39,
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Requests",
+      "type": "stat",
+      "datasource": { "type": "testdata" },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "targets": [{ "refId": "A", "scenarioId": "csv_metric_values", "stringInput": "1424" }]
+    },
+    {
+      "id": 2,
+      "title": "Errors",
+      "type": "stat",
+      "datasource": { "type": "testdata" },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "targets": [{ "refId": "A", "scenarioId": "csv_metric_values", "stringInput": "7" }]
+    },
+    {
+      "id": 3,
+      "title": "Latency p99",
+      "type": "gauge",
+      "datasource": { "type": "testdata" },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "targets": [{ "refId": "A", "scenarioId": "csv_metric_values", "stringInput": "231" }]
+    },
+    {
+      "id": 4,
+      "title": "Saturation",
+      "type": "gauge",
+      "datasource": { "type": "testdata" },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "targets": [{ "refId": "A", "scenarioId": "csv_metric_values", "stringInput": "64" }]
+    },
+    {
+      "id": 5,
+      "title": "About",
+      "type": "text",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 5 },
+      "options": { "mode": "markdown", "content": "## Verbivore corpus\nSynthetic tiles for harvest diversity. [A link](http://example.com) and some **bold** text." }
+    },
+    {
+      "id": 6,
+      "title": "History",
+      "type": "timeseries",
+      "datasource": { "type": "testdata" },
+      "gridPos": { "h": 6, "w": 16, "x": 8, "y": 5 },
+      "targets": [
+        { "refId": "A", "scenarioId": "random_walk" },
+        { "refId": "B", "scenarioId": "random_walk" }
+      ]
+    }
+  ]
+}

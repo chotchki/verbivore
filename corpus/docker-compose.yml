@@ -23,3 +23,52 @@ services:
       - GITEA__security__INSTALL_LOCK=true
       - GITEA__server__ROOT_URL=http://localhost:42002/
       - GITEA__server__HTTP_PORT=3000
+
+  wordpress:
+    image: wordpress:6.5.3
+    ports:
+      - "42003:80"
+    environment:
+      - WORDPRESS_DB_HOST=wpdb
+      - WORDPRESS_DB_USER=wp
+      - WORDPRESS_DB_PASSWORD=wp123
+      - WORDPRESS_DB_NAME=wordpress
+    volumes:
+      - wp_html:/var/www/html
+    depends_on:
+      - wpdb
+
+  wpdb:
+    image: mariadb:11.4
+    environment:
+      - MYSQL_DATABASE=wordpress
+      - MYSQL_USER=wp
+      - MYSQL_PASSWORD=wp123
+      - MYSQL_ROOT_PASSWORD=root123
+
+  # Seed-only tooling (docker compose --profile seed run --rm wpcli ...).
+  # Unpinned on purpose: it never renders a harvested pixel.
+  wpcli:
+    image: wordpress:cli
+    profiles: [seed]
+    user: "33"
+    volumes:
+      - wp_html:/var/www/html
+    environment:
+      - WORDPRESS_DB_HOST=wpdb
+      - WORDPRESS_DB_USER=wp
+      - WORDPRESS_DB_PASSWORD=wp123
+      - WORDPRESS_DB_NAME=wordpress
+    depends_on:
+      - wpdb
+
+  mediawiki:
+    image: mediawiki:1.42
+    ports:
+      - "42004:80"
+    volumes:
+      - mw_data:/var/www/data
+
+volumes:
+  wp_html:
+  mw_data:
