@@ -4,5 +4,6 @@
 
 pub mod data;
 pub mod decode;
+pub mod eval;
 pub mod loss;
 pub mod model;

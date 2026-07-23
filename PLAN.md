@@ -24,7 +24,7 @@ This PLAN.md is driven by `claude-plan-bridge` (FORMATv2):
 - [x] 2.2 - Anchor-free detector (FCOS/CenterNet-style) model definition
 - [x] 2.3 - Detection loss + target assignment
 - [x] 2.4 - Decode + NMS post-processing
-- [ ] 2.5 - IoU/mAP eval harness
+- [x] 2.5 - IoU/mAP eval harness
 - [ ] 2.6 - Training loop: SupervisedTraining, checkpointing, metrics
 - [ ] 2.7 - Cross-machine benchmark: M3 Max wgpu vs 2080 Ti CUDA f16, fixed epochs, record the decision
 - [ ] 2.8 - Intent phrase to element ranking (classical text match for v1)
