@@ -181,6 +181,11 @@ impl Dataset {
         self.root.join("samples").join(format!("{id}.png"))
     }
 
+    /// Path of the metadata sidecar (for tools that move/link samples whole).
+    pub fn meta_json_path(&self, id: &str) -> PathBuf {
+        self.meta_path(id)
+    }
+
     fn meta_path(&self, id: &str) -> PathBuf {
         self.root.join("samples").join(format!("{id}.json"))
     }

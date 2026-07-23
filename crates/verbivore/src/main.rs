@@ -26,6 +26,16 @@ enum Cmd {
         /// Pages to harvest
         urls: Vec<String>,
     },
+    /// Split a dataset into per-host datasets under an output root
+    DatasetSplit {
+        src: PathBuf,
+        out_root: PathBuf,
+    },
+    /// Merge datasets into one via hardlinks (content-addressing dedupes)
+    DatasetMerge {
+        out: PathBuf,
+        srcs: Vec<PathBuf>,
+    },
 }
 
 #[tokio::main]
@@ -47,6 +57,61 @@ async fn main() -> Result<()> {
             }
             harvester.close().await?;
             print!("{}", ds.stats()?);
+        }
+        Cmd::DatasetSplit { src, out_root } => {
+            let src_ds = Dataset::open(&src)?;
+            for id in src_ds.sample_ids()? {
+                let meta = src_ds.meta(&id)?;
+                let host = host_label(&meta.url);
+                let dst = Dataset::create(out_root.join(&host))?;
+                link_sample(&src_ds, &dst, &id)?;
+            }
+            for entry in std::fs::read_dir(&out_root)? {
+                let path = entry?.path();
+                if path.is_dir() {
+                    println!("{}:", path.display());
+                    print!("{}", Dataset::open(&path)?.stats()?);
+                }
+            }
+        }
+        Cmd::DatasetMerge { out, srcs } => {
+            let dst = Dataset::create(&out)?;
+            for src in &srcs {
+                let src_ds = Dataset::open(src)?;
+                for id in src_ds.sample_ids()? {
+                    link_sample(&src_ds, &dst, &id)?;
+                }
+            }
+            print!("{}", dst.stats()?);
+        }
+    }
+    Ok(())
+}
+
+/// "localhost:42001" -> "localhost-42001"; anything non-filename-safe becomes '-'.
+fn host_label(url: &str) -> String {
+    let host = url
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .unwrap_or(url)
+        .split('/')
+        .next()
+        .unwrap_or("unknown");
+    host.chars()
+        .map(|c| if c.is_alphanumeric() || c == '.' { c } else { '-' })
+        .collect()
+}
+
+/// Hardlink a sample's pair into another dataset; existing ids are dedup hits.
+fn link_sample(src: &Dataset, dst: &Dataset, id: &str) -> Result<()> {
+    for (from, to) in [
+        (src.png_path(id), dst.png_path(id)),
+        (src.meta_json_path(id), dst.meta_json_path(id)),
+    ] {
+        match std::fs::hard_link(&from, &to) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e.into()),
         }
     }
     Ok(())
