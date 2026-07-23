@@ -79,6 +79,30 @@ fn loads_letterboxed_items_with_class_indices() -> anyhow::Result<()> {
 }
 
 #[test]
+fn cached_open_returns_identical_items() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    let ds = Dataset::create(dir.path())?;
+    ds.add(
+        "http://fixture/",
+        200,
+        100,
+        1.0,
+        vec![label("button", 50.0, 25.0, 100.0, 50.0)],
+        &png(200, 100, [255, 0, 0]),
+    )?;
+
+    use burn::data::dataset::Dataset as BurnDataset;
+    let plain = BurnDataset::get(&GroundingDataset::open(dir.path())?, 0).unwrap();
+    let cached_ds = GroundingDataset::open_cached(dir.path())?;
+    let first = BurnDataset::get(&cached_ds, 0).unwrap();
+    let second = BurnDataset::get(&cached_ds, 0).unwrap();
+    assert_eq!(plain.image, first.image);
+    assert_eq!(first.image, second.image);
+    assert_eq!(plain.boxes, second.boxes);
+    Ok(())
+}
+
+#[test]
 fn batcher_stacks_images_and_keeps_targets_ragged() -> anyhow::Result<()> {
     let dir = tempfile::tempdir()?;
     let ds = Dataset::create(dir.path())?;

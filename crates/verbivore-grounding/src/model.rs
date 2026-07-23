@@ -92,12 +92,23 @@ impl<B: Backend> Head<B> {
     }
 }
 
-fn head<B: Backend>(channels: usize, out: usize, device: &B::Device) -> Head<B> {
+fn head<B: Backend>(
+    channels: usize,
+    out: usize,
+    bias_prior: Option<f32>,
+    device: &B::Device,
+) -> Head<B> {
+    let mut out_conv = Conv2dConfig::new([channels, out], [1, 1]).init(device);
+    if let Some(prior) = bias_prior {
+        // CenterNet's focal-prior trick: start the head believing "almost nothing
+        // is an object" so the negatives don't drown the first epochs.
+        out_conv.bias = Some(burn::module::Param::from_tensor(Tensor::full(
+            [out], prior, device,
+        )));
+    }
     Head {
         conv: conv_block(channels, channels, 1, device),
-        // Default bias init; if focal loss plateaus at "everything is background",
-        // the classic fix is priming the heatmap bias to ~-4.6 (prior p=0.01).
-        out: Conv2dConfig::new([channels, out], [1, 1]).init(device),
+        out: out_conv,
     }
 }
 
@@ -131,9 +142,9 @@ impl<B: Backend> GroundingModel<B> {
             stage4: conv_block(256, 256, 1, device),
             up1: up_block(256, 128, device),         // 80
             up2: up_block(128, 64, device),          // 160 = stride 4
-            heat: head(64, NUM_CLASSES, device),
-            size: head(64, 2, device),
-            offset: head(64, 2, device),
+            heat: head(64, NUM_CLASSES, Some(-2.19), device),
+            size: head(64, 2, None, device),
+            offset: head(64, 2, None, device),
         }
     }
 

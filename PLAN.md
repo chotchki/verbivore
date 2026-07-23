@@ -60,7 +60,6 @@ This PLAN.md is driven by `claude-plan-bridge` (FORMATv2):
 
 # Backlog (not yet phased)
 
-- Cache decoded training items in memory: png decode dominates real-data epochs (16.6s vs 3.1s synthetic)
 - Canvas verbs: runtime grounding + coordinate actions for canvas content
 - Public-site harvesting for corpus diversity
 - build.rs typed wrapper fns from accepted verb records

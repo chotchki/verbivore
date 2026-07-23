@@ -57,13 +57,28 @@ pub struct GroundingItem {
 pub struct GroundingDataset {
     disk: DiskDataset,
     ids: Vec<String>,
+    cache: Option<Vec<std::sync::OnceLock<GroundingItem>>>,
 }
 
 impl GroundingDataset {
     pub fn open(root: impl AsRef<Path>) -> Result<Self> {
         let disk = DiskDataset::open(root.as_ref().to_path_buf())?;
         let ids = disk.sample_ids()?;
-        Ok(Self { disk, ids })
+        Ok(Self {
+            disk,
+            ids,
+            cache: None,
+        })
+    }
+
+    /// Caches decoded items in memory after first touch: png decode dominates
+    /// epoch time otherwise (5x on real screenshots). Costs ~4.9MB per sample
+    /// resident (3 * 640 * 640 f32) — right for training on a big-RAM box,
+    /// wrong for streaming; pick per call site.
+    pub fn open_cached(root: impl AsRef<Path>) -> Result<Self> {
+        let mut ds = Self::open(root)?;
+        ds.cache = Some((0..ds.ids.len()).map(|_| std::sync::OnceLock::new()).collect());
+        Ok(ds)
     }
 
     fn load(&self, id: &str) -> Result<GroundingItem> {
@@ -125,10 +140,14 @@ impl burn::data::dataset::Dataset<GroundingItem> for GroundingDataset {
         let id = self.ids.get(index)?;
         // A corrupt sample panics with its id: training on silently-skipped data
         // is worse than crashing.
-        Some(
+        let load = || {
             self.load(id)
-                .unwrap_or_else(|e| panic!("loading sample {id}: {e:#}")),
-        )
+                .unwrap_or_else(|e| panic!("loading sample {id}: {e:#}"))
+        };
+        Some(match &self.cache {
+            Some(slots) => slots[index].get_or_init(load).clone(),
+            None => load(),
+        })
     }
 
     fn len(&self) -> usize {

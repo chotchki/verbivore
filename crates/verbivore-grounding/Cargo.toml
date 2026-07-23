@@ -25,3 +25,7 @@ cuda = ["burn/cuda"]
 [[bin]]
 name = "train-bench"
 path = "src/bin/train_bench.rs"
+
+[[bin]]
+name = "train-eval"
+path = "src/bin/train_eval.rs"
