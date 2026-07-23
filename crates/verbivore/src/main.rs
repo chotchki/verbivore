@@ -43,6 +43,18 @@ enum Cmd {
         settle_ms: u64,
         urls: Vec<String>,
     },
+    /// Sabotage harness: click each element for real, then rewired to dead
+    /// pixels, and check the signals-OR-visual gate notices the difference
+    Sabotage {
+        /// Trained gate checkpoint dir (effect-model.mpk + effect-model.json)
+        #[arg(long)]
+        ckpt: PathBuf,
+        /// Settle window in ms
+        #[arg(long, default_value_t = 600)]
+        settle_ms: u64,
+        /// Pages to sabotage
+        urls: Vec<String>,
+    },
     /// Split a dataset into per-host datasets under an output root
     DatasetSplit {
         src: PathBuf,
@@ -91,6 +103,66 @@ async fn main() -> Result<()> {
                 println!("{url}: {} added, {} deduped", outcome.added, outcome.deduped);
             }
             harvester.close().await?;
+        }
+        Cmd::Sabotage {
+            ckpt,
+            settle_ms,
+            urls,
+        } => {
+            let device = Default::default();
+            let gate = verbivore_effect::gate::EffectGate::<burn::backend::Wgpu>::load(
+                &ckpt, &device,
+            )?;
+            let harvester = Harvester::launch().await?;
+            let mut missed = 0usize;
+            for url in &urls {
+                let snap = harvester.snapshot(url).await?;
+                let dead = *verbivore_harvester::dead_click_points(&snap.labels, 1)
+                    .first()
+                    .ok_or_else(|| anyhow::anyhow!("no dead pixel found on {url}"))?;
+                println!("{url} (rewire target {:.0},{:.0}):", dead.0, dead.1);
+                for label in &snap.labels {
+                    let center = (
+                        label.bbox.x + label.bbox.w / 2.0,
+                        label.bbox.y + label.bbox.h / 2.0,
+                    );
+                    // The verb as recorded vs the verb after ui drift: same
+                    // intent, clicks land on dead pixels.
+                    let mut verdicts = Vec::new();
+                    for click in [center, dead] {
+                        let pair = harvester
+                            .capture_action_pair(url, Some(click), settle_ms)
+                            .await?;
+                        let signals =
+                            verbivore_dataset::label_from_signals(&pair.signals)
+                                == verbivore_dataset::EffectLabel::Changed;
+                        let (score, visual) =
+                            gate.saw_change(&pair.before_png, &pair.after_png)?;
+                        verdicts.push((signals || visual, signals, score));
+                    }
+                    let (true_hit, dead_hit) = (verdicts[0].0, verdicts[1].0);
+                    let status = match (true_hit, dead_hit) {
+                        (true, false) => "DETECTED",
+                        (true, true) => {
+                            missed += 1;
+                            "MISSED"
+                        }
+                        // An element with no observable effect can't lose one.
+                        (false, _) => "no-effect",
+                    };
+                    println!(
+                        "  {status:>9} {} \"{}\": true(signals={} score={:.3}) dead(signals={} score={:.3})",
+                        label.role,
+                        label.name.as_deref().unwrap_or("-"),
+                        verdicts[0].1,
+                        verdicts[0].2,
+                        verdicts[1].1,
+                        verdicts[1].2,
+                    );
+                }
+            }
+            harvester.close().await?;
+            anyhow::ensure!(missed == 0, "{missed} sabotaged click(s) went undetected");
         }
         Cmd::DatasetSplit { src, out_root } => {
             let src_ds = Dataset::open(&src)?;

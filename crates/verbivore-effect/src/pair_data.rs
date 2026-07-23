@@ -126,7 +126,8 @@ fn url_bucket(url: &str) -> u8 {
     Sha256::digest(url.as_bytes())[0] % 10
 }
 
-fn to_chw(png: &[u8]) -> Result<Vec<f32>> {
+/// PNG -> CHW RGB [0,1] at the fixed model input size.
+pub fn to_chw(png: &[u8]) -> Result<Vec<f32>> {
     let img = image::load_from_memory(png)?.to_rgb8();
     let resized = image::imageops::resize(
         &img,

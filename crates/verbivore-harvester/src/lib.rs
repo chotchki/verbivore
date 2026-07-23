@@ -294,27 +294,7 @@ impl Harvester {
             .take(max_elements)
             .map(|l| Some((l.bbox.x + l.bbox.w / 2.0, l.bbox.y + l.bbox.h / 2.0)))
             .collect();
-        // Dead candidates: a coarse grid, keeping points clear of every bbox.
-        let mut found = 0usize;
-        'grid: for fy in [0.9, 0.7, 0.5, 0.3] {
-            for fx in [0.9, 0.7, 0.5, 0.3] {
-                let (px, py) = (VIEWPORT_W as f64 * fx, VIEWPORT_H as f64 * fy);
-                const MARGIN: f64 = 6.0;
-                let clear = !snap.labels.iter().any(|l| {
-                    px >= l.bbox.x - MARGIN
-                        && px <= l.bbox.x + l.bbox.w + MARGIN
-                        && py >= l.bbox.y - MARGIN
-                        && py <= l.bbox.y + l.bbox.h + MARGIN
-                });
-                if clear {
-                    clicks.push(Some((px, py)));
-                    found += 1;
-                    if found == dead_points {
-                        break 'grid;
-                    }
-                }
-            }
-        }
+        clicks.extend(dead_click_points(&snap.labels, dead_points).into_iter().map(Some));
         clicks.push(None); // the no-action control
 
         for click in clicks {
@@ -354,4 +334,32 @@ impl Harvester {
         self.handler_task.await.ok();
         Ok(())
     }
+}
+
+/// Viewport points clear of every labeled bbox: a coarse grid scan, up to
+/// `count` hits. The dead-click supply for harvesting and sabotage rewiring.
+pub fn dead_click_points(
+    labels: &[verbivore_dataset::ElementLabel],
+    count: usize,
+) -> Vec<(f64, f64)> {
+    let mut points = Vec::new();
+    for fy in [0.9, 0.7, 0.5, 0.3] {
+        for fx in [0.9, 0.7, 0.5, 0.3] {
+            let (px, py) = (VIEWPORT_W as f64 * fx, VIEWPORT_H as f64 * fy);
+            const MARGIN: f64 = 6.0;
+            let clear = !labels.iter().any(|l| {
+                px >= l.bbox.x - MARGIN
+                    && px <= l.bbox.x + l.bbox.w + MARGIN
+                    && py >= l.bbox.y - MARGIN
+                    && py <= l.bbox.y + l.bbox.h + MARGIN
+            });
+            if clear {
+                points.push((px, py));
+                if points.len() == count {
+                    return points;
+                }
+            }
+        }
+    }
+    points
 }

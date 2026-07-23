@@ -2,6 +2,7 @@
 //! or ambient noise. Runs after every write verb; must beat an SSIM-threshold baseline
 //! to earn its model (see SPEC success criteria). This crate holds that baseline.
 
+pub mod gate;
 pub mod models;
 pub mod pair_data;
 pub mod train;

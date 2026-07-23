@@ -18,6 +18,7 @@ use burn::optim::{AdamWConfig, GradientsParams, Optimizer};
 use burn::prelude::*;
 use burn::record::CompactRecorder;
 use verbivore_dataset::PairDataset;
+use verbivore_effect::gate::GateSidecar;
 use verbivore_effect::models::DiffStackModel;
 use verbivore_effect::pair_data::{PAIR_H, PAIR_W, PairBatcher, load_visible_split};
 use verbivore_effect::train::{Lcg, bce, best_operating_point, operating_point_at, scores};
@@ -26,21 +27,6 @@ use burn::data::dataloader::batcher::Batcher;
 
 type WB = burn::backend::Wgpu;
 type AB = Autodiff<WB>;
-
-/// What phase 4's effect gate needs to run this checkpoint.
-#[derive(serde::Serialize)]
-struct Sidecar {
-    format_version: u32,
-    pair_w: u32,
-    pair_h: u32,
-    /// Sigmoid-score threshold tuned on TRAIN; >= means Changed.
-    threshold: f64,
-    epochs: usize,
-    train_pairs: usize,
-    heldout_pairs: usize,
-    heldout_catch: f64,
-    heldout_false_alarm: f64,
-}
 
 fn gate(catch: f64, fa: f64) -> &'static str {
     if catch >= 0.95 && fa <= 0.05 { "PASS" } else { "FAIL" }
@@ -130,7 +116,7 @@ fn main() -> anyhow::Result<()> {
 
     std::fs::create_dir_all(&out)?;
     valid.save_file(out.join("effect-model"), &CompactRecorder::new())?;
-    let sidecar = Sidecar {
+    let sidecar = GateSidecar {
         format_version: 1,
         pair_w: PAIR_W,
         pair_h: PAIR_H,
