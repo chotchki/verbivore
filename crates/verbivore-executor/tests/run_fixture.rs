@@ -145,3 +145,49 @@ async fn candidate_records_refuse_outside_review_mode() -> anyhow::Result<()> {
     assert_eq!(allowed.verdict, RunVerdict::Passed, "run: {allowed:?}");
     Ok(())
 }
+
+#[tokio::test]
+async fn custom_action_runs_when_registered_and_breaks_typed_when_not() -> anyhow::Result<()> {
+    // The quirk scenario: some widget where a CDP click doesn't work and the
+    // escape hatch drives the page directly. Control flow stays Rust; the
+    // record only carries the NAME.
+    let mut record = record(
+        vec![Step {
+            action: Action::Custom { name: "toggle-details-via-js".into() },
+            target: None,
+            text: None,
+            expect: EffectExpectation::Change,
+        }],
+        vec![],
+    );
+    record.id = "toggle-details-quirk".into();
+
+    let mut executor = Executor::launch().await?;
+    let unregistered = executor.run(&record, &ExecutionContext::default()).await?;
+    assert_eq!(
+        unregistered.verdict,
+        RunVerdict::Broken {
+            breakage: Breakage::UnregisteredCustomAction {
+                step: 0,
+                name: "toggle-details-via-js".into()
+            }
+        },
+        "records travel ahead of their impls: unregistered fails at execution"
+    );
+
+    executor.registry.register(
+        "toggle-details-via-js",
+        Box::new(|page| {
+            Box::pin(async move {
+                page.evaluate("document.getElementById('toggle').click()").await?;
+                Ok(())
+            })
+        }),
+    );
+    let run = executor.run(&record, &ExecutionContext::default()).await?;
+    executor.close().await?;
+
+    assert_eq!(run.verdict, RunVerdict::Passed, "run: {run:?}");
+    assert!(run.steps[0].signals.dom_mutations > 0, "quirk must land its effect");
+    Ok(())
+}
