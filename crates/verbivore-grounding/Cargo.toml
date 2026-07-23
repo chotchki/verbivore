@@ -10,7 +10,18 @@ repository.workspace = true
 anyhow = "1.0.104"
 burn = { version = "0.21", features = ["train", "metal", "ndarray"] }
 image = { version = "0.25.10", default-features = false, features = ["png"] }
+tempfile = "3.27.0"
 verbivore-dataset = { version = "0.1.0", path = "../verbivore-dataset" }
 
 [dev-dependencies]
 tempfile = "3.27.0"
+
+[features]
+default = []
+# The 2080 Ti path: build with --features cuda on the gpu box. Metal stays the
+# default because that's the primary dev machine.
+cuda = ["burn/cuda"]
+
+[[bin]]
+name = "train-bench"
+path = "src/bin/train_bench.rs"
