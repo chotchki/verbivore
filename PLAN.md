@@ -29,7 +29,7 @@ This PLAN.md is driven by `claude-plan-bridge` (FORMATv2):
 - [ ] 2.7 - Cross-machine benchmark: M3 Max wgpu vs 2080 Ti CUDA f16, fixed epochs, record the decision
   - [x] 2.7.1 - Bench harness (train-bench bin, cuda feature) + metal side: 3.06s/epoch steady, 64 samples batch 8
   - [ ] 2.7.2 - Run train-bench --features cuda on the 2080 Ti box, record the backend decision
-- [ ] 2.8 - Intent phrase to element ranking (classical text match for v1)
+- [x] 2.8 - Intent phrase to element ranking (classical text match for v1)
 - [ ] 2.9 - Held-out app eval against the 80% top-1 gate
 
 ## Phase 3 - Effect validation

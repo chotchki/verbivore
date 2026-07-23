@@ -7,4 +7,5 @@ pub mod decode;
 pub mod eval;
 pub mod loss;
 pub mod model;
+pub mod rank;
 pub mod train;
