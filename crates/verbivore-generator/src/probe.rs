@@ -23,32 +23,30 @@ pub struct NavCandidate {
     pub y: f64,
 }
 
-/// Collects nav-ish clickables with their chain identities. Class names are
+/// The shared chain walker: element -> {tokens, selector}. Class names are
 /// deliberately ABSENT from tokens: css-in-js hashes churn per build and
-/// would make every chain unique. data-testid, roles, tags and text stay.
-const COLLECT_JS: &str = r#"
-(() => {
-    const out = [];
-    const navish = document.querySelectorAll(
-        "a[href], [role=link], [role=tab], [role=menuitem], nav button, aside button, header button, [role=navigation] button");
+/// would make every chain unique. data-testid, roles, tags and text stay —
+/// text separates same-menu siblings whose structure is identical.
+const CHAIN_FN: &str = r#"
     const direct = (el) => {
         let t = '';
         for (const n of el.childNodes) if (n.nodeType === 3) t += n.textContent;
         return t.trim().toLowerCase().slice(0, 16);
     };
-    for (const el of navish) {
-        if (out.length >= 60) break;
-        const r = el.getBoundingClientRect();
-        if (r.width < 4 || r.height < 4) continue;
-        if (r.left >= innerWidth || r.top >= innerHeight || r.right <= 0 || r.bottom <= 0) continue;
-        const leaf = (el.textContent || '').trim().toLowerCase().slice(0, 24);
-        if (/logout|sign out|signout|delete|remove/.test(leaf)) continue;
+    // Only INFORMATIVE tokens enter the identity: generic tags (div, ul, a)
+    // are shared by every link in the app and would drown a distinctive url
+    // token under shared chain mass (measured: /admin scored "near" every
+    // mega-menu twin and saturation quit before reaching it). Generic tags
+    // still anchor the SELECTOR — identity and addressing are different jobs.
+    const semantic = new Set(['nav', 'aside', 'header', 'footer', 'main', 'form',
+        'dialog', 'table', 'menu', 'section', 'article']);
+    const chain = (el) => {
         const tokens = new Set();
         const parts = [];
         let node = el;
         while (node && node.tagName && node.tagName !== 'HTML') {
             const tag = node.tagName.toLowerCase();
-            tokens.add(tag);
+            if (semantic.has(tag)) tokens.add(tag);
             const role = node.getAttribute('role');
             if (role) tokens.add('role:' + role);
             const tid = node.getAttribute('data-testid');
@@ -60,15 +58,64 @@ const COLLECT_JS: &str = r#"
             parts.unshift(tag + ':nth-child(' + idx + ')');
             node = node.parentElement;
         }
+        const leaf = (el.textContent || '').trim().toLowerCase().slice(0, 24);
         if (leaf) tokens.add('leaf:' + leaf);
-        out.push({ tokens: [...tokens], selector: parts.join('>'), x: r.left + r.width / 2, y: r.top + r.height / 2 });
-    }
-    return out;
-})()
+        return { tokens: [...tokens], selector: parts.join('>'), leaf };
+    };
 "#;
 
+fn collect_js() -> String {
+    format!(
+        r#"(() => {{
+    {CHAIN_FN}
+    const out = [];
+    const navish = document.querySelectorAll(
+        "a[href], [role=link], [role=tab], [role=menuitem], nav button, aside button, header button, [role=navigation] button");
+    for (const el of navish) {{
+        if (out.length >= 60) break;
+        const r = el.getBoundingClientRect();
+        if (r.width < 4 || r.height < 4) continue;
+        if (r.left >= innerWidth || r.top >= innerHeight || r.right <= 0 || r.bottom <= 0) continue;
+        const c = chain(el);
+        if (/logout|sign out|signout|delete|remove/.test(c.leaf)) continue;
+        out.push({{ tokens: c.tokens, selector: c.selector, x: r.left + r.width / 2, y: r.top + r.height / 2 }});
+    }}
+    return out;
+}})()"#
+    )
+}
+
+/// Every same-document anchor with the chain that presents it — the frontier
+/// unifies these chain tokens with url tokens into ONE identity, because
+/// there is no way to know per-app which side carries the template signal
+/// (opaque routes: chains carry it; server-rendered sidebars: urls do).
+fn hrefs_with_chains_js() -> String {
+    format!(
+        r#"(() => {{
+    {CHAIN_FN}
+    const out = [];
+    for (const el of document.querySelectorAll('a[href]')) {{
+        if (out.length >= 300) break;
+        out.push({{ href: el.href, tokens: chain(el).tokens }});
+    }}
+    return out;
+}})()"#
+    )
+}
+
+/// An anchor and the DOM chain it hangs from.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ChainedHref {
+    pub href: String,
+    pub tokens: Vec<String>,
+}
+
+pub async fn collect_hrefs(page: &chromiumoxide::Page) -> Result<Vec<ChainedHref>> {
+    Ok(page.evaluate(hrefs_with_chains_js()).await?.into_value()?)
+}
+
 pub async fn collect_nav_candidates(page: &chromiumoxide::Page) -> Result<Vec<NavCandidate>> {
-    Ok(page.evaluate(COLLECT_JS).await?.into_value()?)
+    Ok(page.evaluate(collect_js()).await?.into_value()?)
 }
 
 /// Farthest-first probe order over chain-token sets (greedy k-center, same
@@ -111,14 +158,15 @@ pub fn probe_order(candidates: &[NavCandidate]) -> Vec<usize> {
 }
 
 /// Clicks up to `budget` chain-diverse candidates on fresh loads of
-/// `origin`, returning the urls navigation landed on. Every probe gets a
+/// `origin`, returning (landed url, the chain that led there) — the chain
+/// tokens join the landed url's frontier identity. Every probe gets a
 /// clean page: SPA state must not leak between probes.
 pub async fn probe_urls(
     harvester: &Harvester,
     origin: &str,
     variation: &Variation,
     budget: usize,
-) -> Result<Vec<String>> {
+) -> Result<Vec<(String, Vec<String>)>> {
     let page = harvester.open_page(origin, variation).await?;
     harvester.settle_render(&page).await?;
     let candidates = collect_nav_candidates(&page).await?;
@@ -149,7 +197,7 @@ pub async fn probe_urls(
                 && let Ok(url) = url.into_value::<String>()
                 && url != origin
             {
-                landed.push(url);
+                landed.push((url, candidate.tokens.clone()));
             }
         }
         page.close().await.ok();

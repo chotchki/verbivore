@@ -166,6 +166,12 @@ struct Frontier {
     guard: FrontierGuard,
     queue: Vec<(String, HashSet<String>)>,
     visited: Vec<HashSet<String>>,
+    /// Path families already visited: a query-only twin of a visited page is
+    /// the same template BY CONSTRUCTION, whatever its tokens say — probe-
+    /// landed twins carry different chain tokens than their href originals
+    /// and would otherwise look novel (measured: ?orgId twins outranked
+    /// /admin and burned the saturation streak).
+    visited_families: HashSet<String>,
 }
 
 impl Frontier {
@@ -174,13 +180,20 @@ impl Frontier {
             guard: FrontierGuard::new(start_url, deny, max_pages),
             queue: vec![(start_url.to_string(), url_tokens(start_url))],
             visited: Vec::new(),
+            visited_families: HashSet::new(),
         }
     }
 
     /// True when the url was admitted (novel, in-scope, under budgets).
-    fn push(&mut self, href: &str) -> bool {
+    /// `chain_tokens` is the DOM chain that presented this link; the entry's
+    /// identity is url tokens UNION chain tokens — one combined distance
+    /// check, because which side carries the template signal is per-app
+    /// unknowable (opaque routes: the chain knows; plain sidebars: the url
+    /// knows; the union lets whichever has information dominate).
+    fn push(&mut self, href: &str, chain_tokens: &[String]) -> bool {
         if let Some(clean) = self.guard.admit(href) {
-            let tokens = url_tokens(&clean);
+            let mut tokens = url_tokens(&clean);
+            tokens.extend(chain_tokens.iter().cloned());
             self.queue.push((clean, tokens));
             true
         } else {
@@ -191,8 +204,12 @@ impl Frontier {
     fn next(&mut self) -> Option<String> {
         let mut pick = 0usize;
         let mut best = f64::NEG_INFINITY;
-        for (i, (_, tokens)) in self.queue.iter().enumerate() {
-            let d = self.min_distance(tokens);
+        for (i, (url, tokens)) in self.queue.iter().enumerate() {
+            let d = if self.visited_families.contains(&FrontierGuard::family(url)) {
+                0.05 // same path as a visited page: same template, tokens lie
+            } else {
+                self.min_distance(tokens)
+            };
             // Strictly-greater keeps the earliest on ties: stable, BFS-flavored.
             if d > best {
                 best = d;
@@ -203,6 +220,7 @@ impl Frontier {
             return None;
         }
         let (url, tokens) = self.queue.swap_remove(pick);
+        self.visited_families.insert(FrontierGuard::family(&url));
         self.visited.push(tokens);
         Some(url)
     }
@@ -312,13 +330,10 @@ pub async fn crawl(
             }
         }
 
-        let hrefs: Vec<String> = page
-            .evaluate("[...document.querySelectorAll('a[href]')].map(a => a.href)")
-            .await?
-            .into_value()?;
+        let hrefs = crate::probe::collect_hrefs(&page).await?;
         page.close().await.ok();
         for href in hrefs {
-            frontier.push(&href);
+            frontier.push(&href.href, &href.tokens);
         }
     }
     Ok(report)
@@ -361,24 +376,21 @@ pub async fn discover(
         harvester.settle_render(&page).await?;
         let novel = gauge.observe(&harvester.page_map(&page, &variation).await?);
         eprintln!("discover: {url} (+{novel} element templates)");
-        let hrefs: Vec<String> = page
-            .evaluate("[...document.querySelectorAll('a[href]')].map(a => a.href)")
-            .await?
-            .into_value()?;
+        let hrefs = crate::probe::collect_hrefs(&page).await?;
         page.close().await.ok();
         let mut admitted = 0usize;
         for href in hrefs {
-            if frontier.push(&href) {
+            if frontier.push(&href.href, &href.tokens) {
                 admitted += 1;
             }
         }
         // Url structure we can't trust (href-dry page): probe navigation
         // targets by DOM-chain diversity instead and admit wherever they land.
         if admitted < 3 {
-            for landed in
+            for (landed, chain) in
                 crate::probe::probe_urls(harvester, &url, &variation, 6).await?
             {
-                if frontier.push(&landed) {
+                if frontier.push(&landed, &chain) {
                     eprintln!("discover: probed -> {landed}");
                 }
             }
@@ -443,10 +455,10 @@ mod tests {
         let mut f = Frontier::new("http://x/", &[], 30);
         assert_eq!(f.next().as_deref(), Some("http://x/"));
         for page in ["a", "b", "c"] {
-            f.push(&format!("http://x/wiki/{page}"));
+            f.push(&format!("http://x/wiki/{page}"), &[]);
         }
-        f.push("http://x/special/search?q=1");
-        f.push("http://x/admin/settings/users");
+        f.push("http://x/special/search?q=1", &[]);
+        f.push("http://x/admin/settings/users", &[]);
 
         let picks: Vec<String> = (0..3).filter_map(|_| f.next()).collect();
         let wiki_picks = picks.iter().filter(|u| u.contains("/wiki/")).count();
@@ -457,6 +469,30 @@ mod tests {
     }
 
 
+
+    #[test]
+    fn unified_identity_survives_opaque_urls() {
+        // Uuid routes: url tokens are all-different, so url distance alone
+        // reads two same-menu links as maximally diverse and the genuinely
+        // different template (footer chain) as no more interesting. The
+        // chain tokens in the union are what rank the footer link first.
+        let menu: Vec<String> =
+            ["nav", "ul", "a", "txt:reports"].iter().map(|s| s.to_string()).collect();
+        let footer: Vec<String> =
+            ["footer", "a", "txt:legal"].iter().map(|s| s.to_string()).collect();
+        let mut f = Frontier::new("http://x/", &[], 30);
+        assert_eq!(f.next().as_deref(), Some("http://x/"));
+        f.push("http://x/view/1b9a2c3d", &menu);
+        f.push("http://x/view/9e8f7a6b", &menu);
+        f.push("http://x/view/5c4d3e2f", &footer);
+        let first = f.next().unwrap();
+        let second = f.next().unwrap();
+        assert_eq!(first, "http://x/view/1b9a2c3d", "ties fall to enqueue order");
+        assert_eq!(
+            second, "http://x/view/5c4d3e2f",
+            "the footer chain must outrank the menu sibling despite opaque urls"
+        );
+    }
     #[test]
     fn frontier_has_a_memory_bound() {
         let mut g = FrontierGuard::new("http://x/", &[], 1);
