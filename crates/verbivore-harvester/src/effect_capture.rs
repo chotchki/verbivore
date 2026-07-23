@@ -9,13 +9,11 @@
 
 use anyhow::Result;
 use chromiumoxide::Page;
-use chromiumoxide::cdp::browser_protocol::input::{
-    DispatchMouseEventParams, DispatchMouseEventType, MouseButton,
-};
 use chromiumoxide::cdp::browser_protocol::page::CaptureScreenshotFormat;
 use chromiumoxide::page::ScreenshotParams;
 
-async fn shot(page: &Page) -> Result<Vec<u8>> {
+/// Current-viewport PNG.
+pub async fn shot(page: &Page) -> Result<Vec<u8>> {
     Ok(page
         .screenshot(
             ScreenshotParams::builder()
@@ -57,54 +55,62 @@ pub use verbivore_dataset::EffectSignals as ActionSignals;
 // stable parents, so they suppress too. Known hole: noise with a period
 // LONGER than the window never registers as ambient — that's a window-length
 // problem no bookkeeping fixes, and why the runtime gate is signals OR visual.
+// Re-armable: state resets on every evaluation (each arm gets a fresh ambient
+// phase — the executor re-arms per step), but observers and wrappers install
+// once per document. Everything reads `window.__vb` at event time, so a reset
+// re-points them at the fresh state.
 const OBSERVER_JS: &str = r#"
-window.__vb = {
-    phase: 'ambient',
-    ambient: { mutations: 0, aria: 0, requests: 0 },
-    action: { mutations: 0, aria: 0, requests: 0 },
-    seen: new WeakMap(),
-    seenPaths: new Set(),
-};
-const kindKey = (r) =>
-    r.type === 'attributes' ? r.attributeName : r.type === 'characterData' ? '#text' : '#children';
-new MutationObserver(records => {
-    const vb = window.__vb;
-    for (const r of records) {
-        const key = kindKey(r);
-        const aria = r.type === 'attributes' && key && key.startsWith('aria-');
-        if (vb.phase === 'ambient') {
-            let kinds = vb.seen.get(r.target);
-            if (!kinds) { kinds = new Set(); vb.seen.set(r.target, kinds); }
-            kinds.add(key);
-            vb.ambient.mutations += 1;
-            if (aria) vb.ambient.aria += 1;
-        } else {
-            const kinds = vb.seen.get(r.target);
-            if (kinds && kinds.has(key)) continue;
-            vb.action.mutations += 1;
-            if (aria) vb.action.aria += 1;
+(() => {
+    window.__vb = {
+        phase: 'ambient',
+        ambient: { mutations: 0, aria: 0, requests: 0 },
+        action: { mutations: 0, aria: 0, requests: 0 },
+        seen: new WeakMap(),
+        seenPaths: new Set(),
+    };
+    if (window.__vb_wired) return;
+    window.__vb_wired = true;
+    const kindKey = (r) =>
+        r.type === 'attributes' ? r.attributeName : r.type === 'characterData' ? '#text' : '#children';
+    new MutationObserver(records => {
+        const vb = window.__vb;
+        for (const r of records) {
+            const key = kindKey(r);
+            const aria = r.type === 'attributes' && key && key.startsWith('aria-');
+            if (vb.phase === 'ambient') {
+                let kinds = vb.seen.get(r.target);
+                if (!kinds) { kinds = new Set(); vb.seen.set(r.target, kinds); }
+                kinds.add(key);
+                vb.ambient.mutations += 1;
+                if (aria) vb.ambient.aria += 1;
+            } else {
+                const kinds = vb.seen.get(r.target);
+                if (kinds && kinds.has(key)) continue;
+                vb.action.mutations += 1;
+                if (aria) vb.action.aria += 1;
+            }
         }
-    }
-}).observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
-// Count request INTENT, not resource-timing entries: data:/blob:/cached
-// requests dodge the timeline, but a wrapped call can't hide. Suppression key
-// drops the query so pollers' cache-busters don't defeat it.
-const reqPath = (u) => {
-    try { const p = new URL(u instanceof Request ? u.url : String(u), location.href); return p.origin + p.pathname; }
-    catch (e) { return String(u); }
-};
-const note = (u) => {
-    const vb = window.__vb, path = reqPath(u);
-    if (vb.phase === 'ambient') { vb.seenPaths.add(path); vb.ambient.requests += 1; }
-    else if (!vb.seenPaths.has(path)) { vb.action.requests += 1; }
-};
-const origFetch = window.fetch.bind(window);
-window.fetch = (...args) => { note(args[0]); return origFetch(...args); };
-const origOpen = XMLHttpRequest.prototype.open;
-XMLHttpRequest.prototype.open = function (...args) {
-    note(args[1]);
-    return origOpen.apply(this, args);
-};
+    }).observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+    // Count request INTENT, not resource-timing entries: data:/blob:/cached
+    // requests dodge the timeline, but a wrapped call can't hide. Suppression
+    // key drops the query so pollers' cache-busters don't defeat it.
+    const reqPath = (u) => {
+        try { const p = new URL(u instanceof Request ? u.url : String(u), location.href); return p.origin + p.pathname; }
+        catch (e) { return String(u); }
+    };
+    const note = (u) => {
+        const vb = window.__vb, path = reqPath(u);
+        if (vb.phase === 'ambient') { vb.seenPaths.add(path); vb.ambient.requests += 1; }
+        else if (!vb.seenPaths.has(path)) { vb.action.requests += 1; }
+    };
+    const origFetch = window.fetch.bind(window);
+    window.fetch = (...args) => { note(args[0]); return origFetch(...args); };
+    const origOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function (...args) {
+        note(args[1]);
+        return origOpen.apply(this, args);
+    };
+})();
 'armed'
 "#;
 
@@ -126,24 +132,39 @@ JSON.stringify(window.__vb
     : { navigated: true })
 "#;
 
-/// Arms the signal counters on an already-loaded page. Call once per page,
-/// BEFORE `click_and_capture`.
-pub(crate) async fn arm(page: &Page) -> Result<()> {
+/// The ambient window observes at least this long regardless of `settle_ms`.
+/// Public so callers composing the phases directly (the executor) use the
+/// same floor the harvester does.
+pub const AMBIENT_MIN_MS: u64 = 1500;
+
+/// Arms the signal counters on an already-loaded page: observation enters the
+/// AMBIENT phase. Re-arm after any navigation — the observer dies with its
+/// document.
+pub async fn arm(page: &Page) -> Result<()> {
     page.evaluate(OBSERVER_JS).await?;
     Ok(())
 }
 
-/// The ambient window observes at least this long regardless of `settle_ms`.
-/// Suppression lists only get MORE complete with longer observation (unlike
+/// Ends the ambient phase and returns its tallies; subsequent activity counts
+/// as the action's — call this immediately before acting.
+pub async fn begin_action(page: &Page) -> Result<ActionSignals> {
+    read_signals(page, BEGIN_ACTION_JS).await
+}
+
+/// Reads the action-phase tallies (ambient-suppressed page-side). A dead
+/// `__vb` reads as `navigated: true`.
+pub async fn read_action(page: &Page) -> Result<ActionSignals> {
+    read_signals(page, READ_JS).await
+}
+
+/// Captures a pair around an optional click (None = no-action control pair).
+/// `settle_ms` is a fixed wait for v1 — replacing it with the effect model IS
+/// phase 3's plot. The ambient window runs `max(settle_ms, AMBIENT_MIN_MS)`:
+/// suppression lists only get MORE complete with longer observation (unlike
 /// count subtraction, which needed equal windows), and a periodic source is
 /// guaranteed to register once the window covers a full period — 600ms
 /// windows were missing 750-900ms tickers, whose next tick then read as the
 /// click's doing.
-const AMBIENT_MIN_MS: u64 = 1500;
-
-/// Captures a pair around an optional click (None = no-action control pair).
-/// `settle_ms` is a fixed wait for v1 — replacing it with the effect model IS
-/// phase 3's plot.
 pub(crate) async fn click_and_capture(
     page: &Page,
     click: Option<(f64, f64)>,
@@ -153,23 +174,15 @@ pub(crate) async fn click_and_capture(
     // noise (animations, timers), not the click's doing — its targets become
     // the suppression list for the action window.
     tokio::time::sleep(std::time::Duration::from_millis(settle_ms.max(AMBIENT_MIN_MS))).await;
-    let ambient = read_signals(page, BEGIN_ACTION_JS).await?;
+    let ambient = begin_action(page).await?;
 
     let before_png = shot(page).await?;
     if let Some((x, y)) = click {
-        for kind in [
-            DispatchMouseEventType::MousePressed,
-            DispatchMouseEventType::MouseReleased,
-        ] {
-            let mut params = DispatchMouseEventParams::new(kind, x, y);
-            params.button = Some(MouseButton::Left);
-            params.click_count = Some(1);
-            page.execute(params).await?;
-        }
+        crate::input::click_at(page, x, y).await?;
     }
     tokio::time::sleep(std::time::Duration::from_millis(settle_ms)).await;
     let after_png = shot(page).await?;
-    let action = read_signals(page, READ_JS).await?;
+    let action = read_action(page).await?;
 
     let signals = if action.navigated {
         // Counters died with the old document; navigation IS the signal.

@@ -2,6 +2,7 @@
 //! provides bounding boxes + roles at capture time so no human ever annotates.
 
 pub mod effect_capture;
+pub mod input;
 pub mod labels;
 
 pub use effect_capture::{ActionPair, ActionSignals};
@@ -180,7 +181,9 @@ impl Harvester {
         Ok(outcome)
     }
 
-    pub async fn snapshot_with(&self, url: &str, variation: &Variation) -> Result<PageSnapshot> {
+    /// Opens `url` under a rendering variation and returns the LIVE page —
+    /// the executor's entry point; callers own closing it.
+    pub async fn open_page(&self, url: &str, variation: &Variation) -> Result<chromiumoxide::Page> {
         let (vw, vh) = variation.viewport;
         let page = self.browser.new_page("about:blank").await?;
         // Metrics set BEFORE navigation so layout, quads and screenshot agree.
@@ -214,7 +217,24 @@ impl Harvester {
             ))
             .await?;
         }
+        Ok(page)
+    }
 
+    /// Interactive-element labels for the page AS IT IS NOW — the executor
+    /// re-extracts before every step because menus only exist post-interaction.
+    pub async fn labels_on(
+        &self,
+        page: &chromiumoxide::Page,
+        variation: &Variation,
+    ) -> Result<Vec<ElementLabel>> {
+        let (vw, vh) = variation.viewport;
+        let ax = page.execute(GetFullAxTreeParams::default()).await?;
+        labels::extract(page, &ax.result.nodes, vw as f64, vh as f64, variation.dpr).await
+    }
+
+    pub async fn snapshot_with(&self, url: &str, variation: &Variation) -> Result<PageSnapshot> {
+        let (vw, vh) = variation.viewport;
+        let page = self.open_page(url, variation).await?;
         let screenshot_png = page
             .screenshot(
                 ScreenshotParams::builder()

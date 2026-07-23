@@ -43,6 +43,25 @@ enum Cmd {
         settle_ms: u64,
         urls: Vec<String>,
     },
+    /// Run a stored verb record under an execution context; nonzero exit on
+    /// any breakage (typed, printed as json for the repair loop)
+    RunVerb {
+        /// Verb store root
+        #[arg(long)]
+        verbs: PathBuf,
+        /// App label the verb lives under
+        #[arg(long)]
+        app: String,
+        /// Verb id
+        #[arg(long)]
+        id: String,
+        /// Review mode: allow candidate (unaccepted) records
+        #[arg(long, default_value_t = false)]
+        allow_candidate: bool,
+        /// Settle window in ms
+        #[arg(long, default_value_t = 600)]
+        settle_ms: u64,
+    },
     /// Sabotage harness: click each element for real, then rewired to dead
     /// pixels, and check the signals-OR-visual gate notices the difference
     Sabotage {
@@ -103,6 +122,37 @@ async fn main() -> Result<()> {
                 println!("{url}: {} added, {} deduped", outcome.added, outcome.deduped);
             }
             harvester.close().await?;
+        }
+        Cmd::RunVerb {
+            verbs,
+            app,
+            id,
+            allow_candidate,
+            settle_ms,
+        } => {
+            let store = verbivore_verb::VerbStore::open(verbs)?;
+            let record = store.load(&app, &id)?;
+            let ctx = verbivore_executor::ExecutionContext {
+                settle_ms,
+                allow_candidates: allow_candidate,
+                ..Default::default()
+            };
+            let executor = verbivore_executor::Executor::launch().await?;
+            let run = executor.run(&record, &ctx).await?;
+            executor.close().await?;
+            for (i, step) in run.steps.iter().enumerate() {
+                println!(
+                    "step {i}: {:?} at {:?} -> {:?} ({:?})",
+                    step.action, step.clicked, step.effect_label, step.signals
+                );
+            }
+            match &run.verdict {
+                verbivore_executor::RunVerdict::Passed => println!("{id}: PASSED"),
+                verbivore_executor::RunVerdict::Broken { breakage } => {
+                    println!("{id}: BROKEN {}", serde_json::to_string(breakage)?);
+                    anyhow::bail!("verb {id} broke");
+                }
+            }
         }
         Cmd::Sabotage {
             ckpt,

@@ -7138,10 +7138,13 @@ dependencies = [
  "anyhow",
  "burn",
  "clap",
+ "serde_json",
  "tokio",
  "verbivore-dataset",
  "verbivore-effect",
+ "verbivore-executor",
  "verbivore-harvester",
+ "verbivore-verb",
 ]
 
 [[package]]
@@ -7171,6 +7174,16 @@ dependencies = [
 [[package]]
 name = "verbivore-executor"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chromiumoxide",
+ "futures",
+ "serde",
+ "tokio",
+ "verbivore-dataset",
+ "verbivore-harvester",
+ "verbivore-verb",
+]
 
 [[package]]
 name = "verbivore-grounding"

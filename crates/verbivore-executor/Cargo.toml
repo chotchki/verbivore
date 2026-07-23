@@ -1,9 +1,20 @@
 [package]
 name = "verbivore-executor"
-description = "Generic executor for verb records: deterministic CDP actions plus the quirk registry"
+description = "Generic executor for verb records: deterministic CDP actions plus the quirk registry, every failure classified for the repair loop"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
+anyhow = "1.0.104"
+chromiumoxide = "0.9.1"
+futures = "0.3.31"
+serde = { version = "1.0.229", features = ["derive"] }
+tokio = { version = "1.53.1", features = ["time", "macros"] }
+verbivore-dataset = { version = "0.1.0", path = "../verbivore-dataset" }
+verbivore-harvester = { version = "0.1.0", path = "../verbivore-harvester" }
+verbivore-verb = { version = "0.1.0", path = "../verbivore-verb" }
+
+[dev-dependencies]
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }

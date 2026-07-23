@@ -10,7 +10,10 @@ repository.workspace = true
 anyhow = "1.0.104"
 burn = { version = "0.21", features = ["metal"] }
 clap = { version = "4.6.4", features = ["derive"] }
+serde_json = "1.0.151"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }
 verbivore-dataset = { version = "0.1.0", path = "../verbivore-dataset" }
 verbivore-effect = { version = "0.1.0", path = "../verbivore-effect" }
+verbivore-executor = { version = "0.1.0", path = "../verbivore-executor" }
 verbivore-harvester = { version = "0.1.0", path = "../verbivore-harvester" }
+verbivore-verb = { version = "0.1.0", path = "../verbivore-verb" }
