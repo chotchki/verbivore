@@ -61,6 +61,6 @@ This PLAN.md is driven by `claude-plan-bridge` (FORMATv2):
 
 # Backlog (not yet phased)
 
-- Canvas verbs: runtime grounding + coordinate actions for canvas content
+- Canvas verbs: runtime grounding + coordinate actions for canvas content (QuickSight accounts are dead; stand-ins: Grafana's uPlot panels are ALREADY canvas, add an ECharts app like Superset for depth)
 - Public-site harvesting for corpus diversity
 - build.rs typed wrapper fns from accepted verb records
