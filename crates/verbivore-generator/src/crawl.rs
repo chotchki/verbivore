@@ -3,7 +3,7 @@
 //! fragments (logout, delete...) guard app state; the corpus apps are
 //! disposable but hygiene is free.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::HashSet;
 
 use anyhow::Result;
 use verbivore_harvester::{Harvester, Variation};
@@ -58,6 +58,101 @@ const SKIP_EXTENSIONS: &[&str] = &[
     ".css", ".js", ".json", ".xml", ".txt", ".pdf", ".zip", ".png", ".jpg", ".jpeg", ".gif",
     ".svg", ".ico", ".webp", ".woff", ".woff2", ".rss", ".atom",
 ];
+/// Machine endpoints that render no document (measured leaks: mediawiki's
+/// api.php atom feed hides its format in a query VALUE, gitea's /api/swagger).
+const SKIP_SUBSTRINGS: &[&str] = &["/api.php", "/api/", "feedformat="];
+
+/// Template-shaped url tokens: path segments + query KEYS (values are
+/// content identity, keys are template identity — ?oldid=7 and ?oldid=9 are
+/// the same page shape).
+fn url_tokens(url: &str) -> HashSet<String> {
+    let rest = url.split_once("://").map(|(_, r)| r).unwrap_or(url);
+    let (path, query) = match rest.split_once('?') {
+        Some((p, q)) => (p, Some(q)),
+        None => (rest, None),
+    };
+    let mut tokens: HashSet<String> = path
+        .split('/')
+        .skip(1) // the host authority is shared by construction (same_host)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_lowercase())
+        .collect();
+    if let Some(q) = query {
+        tokens.extend(
+            q.split('&')
+                .filter_map(|kv| kv.split('=').next())
+                .filter(|k| !k.is_empty())
+                .map(|k| format!("?{}", k.to_lowercase())),
+        );
+    }
+    tokens
+}
+
+/// 1 - Jaccard similarity; 1.0 = no shared structure. Chris's instinct was
+/// hamming distance — right goal, wrong metric: hamming is position-aligned
+/// and undefined across lengths, so two articles of the SAME template can
+/// score farther apart than an article and the admin panel. Token overlap
+/// measures the thing the corpus actually wants: template unlikeness.
+fn jaccard_distance(a: &HashSet<String>, b: &HashSet<String>) -> f64 {
+    let union = a.union(b).count();
+    if union == 0 {
+        return 0.0; // both roots: identical, not distant
+    }
+    1.0 - a.intersection(b).count() as f64 / union as f64
+}
+
+/// The frontier with its selection policy: guarded admission + FARTHEST-FIRST
+/// visiting order (greedy k-center) — each pick maximizes the minimum
+/// distance to every page already visited, so a truncating budget gets spent
+/// across templates instead of down whichever list the first page linked.
+struct Frontier {
+    guard: FrontierGuard,
+    queue: Vec<(String, HashSet<String>)>,
+    visited: Vec<HashSet<String>>,
+}
+
+impl Frontier {
+    fn new(start_url: &str, deny: &[String], max_pages: usize) -> Self {
+        Self {
+            guard: FrontierGuard::new(start_url, deny, max_pages),
+            queue: vec![(start_url.to_string(), url_tokens(start_url))],
+            visited: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, href: &str) {
+        if let Some(clean) = self.guard.admit(href) {
+            let tokens = url_tokens(&clean);
+            self.queue.push((clean, tokens));
+        }
+    }
+
+    fn next(&mut self) -> Option<String> {
+        let mut pick = 0usize;
+        let mut best = f64::NEG_INFINITY;
+        for (i, (_, tokens)) in self.queue.iter().enumerate() {
+            let d = self.min_distance(tokens);
+            // Strictly-greater keeps the earliest on ties: stable, BFS-flavored.
+            if d > best {
+                best = d;
+                pick = i;
+            }
+        }
+        if self.queue.is_empty() {
+            return None;
+        }
+        let (url, tokens) = self.queue.swap_remove(pick);
+        self.visited.push(tokens);
+        Some(url)
+    }
+
+    fn min_distance(&self, tokens: &HashSet<String>) -> f64 {
+        self.visited
+            .iter()
+            .map(|v| jaccard_distance(tokens, v))
+            .fold(f64::INFINITY, f64::min)
+    }
+}
 
 impl FrontierGuard {
     fn new(start_url: &str, deny: &[String], max_pages: usize) -> Self {
@@ -82,6 +177,7 @@ impl FrontierGuard {
         if !same_host(&clean, &self.start_url)
             || self.deny.iter().any(|d| lower.contains(d.as_str()))
             || SKIP_EXTENSIONS.iter().any(|e| lower.split('?').next().unwrap_or("").ends_with(e))
+            || SKIP_SUBSTRINGS.iter().any(|s| lower.contains(s))
             || self.enqueued >= self.max_enqueued
         {
             return None;
@@ -114,10 +210,9 @@ pub async fn crawl(
 ) -> Result<CrawlReport> {
     let variation = Variation::default();
     let mut report = CrawlReport { pages: 0, proposed: 0, skipped_existing: 0 };
-    let mut frontier: VecDeque<String> = VecDeque::from([start_url.to_string()]);
-    let mut guard = FrontierGuard::new(start_url, deny, max_pages);
+    let mut frontier = Frontier::new(start_url, deny, max_pages);
 
-    while let Some(url) = frontier.pop_front() {
+    while let Some(url) = frontier.next() {
         if report.pages >= max_pages {
             break;
         }
@@ -154,9 +249,7 @@ pub async fn crawl(
             .into_value()?;
         page.close().await.ok();
         for href in hrefs {
-            if let Some(clean) = guard.admit(&href) {
-                frontier.push_back(clean);
-            }
+            frontier.push(&href);
         }
     }
     Ok(report)
@@ -178,9 +271,8 @@ pub async fn discover(
 ) -> Result<Vec<String>> {
     let variation = Variation::default();
     let mut visited: Vec<String> = Vec::new();
-    let mut frontier: VecDeque<String> = VecDeque::from([start_url.to_string()]);
-    let mut guard = FrontierGuard::new(start_url, deny, max_pages);
-    while let Some(url) = frontier.pop_front() {
+    let mut frontier = Frontier::new(start_url, deny, max_pages);
+    while let Some(url) = frontier.next() {
         if visited.len() >= max_pages {
             break;
         }
@@ -198,9 +290,7 @@ pub async fn discover(
             .into_value()?;
         page.close().await.ok();
         for href in hrefs {
-            if let Some(clean) = guard.admit(&href) {
-                frontier.push_back(clean);
-            }
+            frontier.push(&href);
         }
     }
     Ok(visited)
@@ -245,6 +335,36 @@ mod tests {
         assert!(g.admit("http://localhost:42002/repo").is_some());
         assert!(g.admit("http://localhost:42002/repo#readme").is_none(), "fragment dupe");
     }
+
+    #[test]
+    fn tokens_are_template_shaped() {
+        let a = url_tokens("http://x/index.php?title=Main&oldid=7");
+        let b = url_tokens("http://x/index.php?title=Other&oldid=9");
+        assert_eq!(a, b, "query VALUES are content, not template");
+        assert!(a.contains("?oldid") && a.contains("index.php"));
+    }
+
+    #[test]
+    fn farthest_first_spends_the_budget_across_templates() {
+        // A wiki-shaped app: the landing page links five articles (same
+        // template) plus search and admin. A truncating budget must reach
+        // the unlike templates before article #2.
+        let mut f = Frontier::new("http://x/", &[], 30);
+        assert_eq!(f.next().as_deref(), Some("http://x/"));
+        for page in ["a", "b", "c"] {
+            f.push(&format!("http://x/wiki/{page}"));
+        }
+        f.push("http://x/special/search?q=1");
+        f.push("http://x/admin/settings/users");
+
+        let picks: Vec<String> = (0..3).filter_map(|_| f.next()).collect();
+        let wiki_picks = picks.iter().filter(|u| u.contains("/wiki/")).count();
+        assert_eq!(
+            wiki_picks, 1,
+            "one article, then the unlike templates: {picks:?}"
+        );
+    }
+
 
     #[test]
     fn frontier_has_a_memory_bound() {

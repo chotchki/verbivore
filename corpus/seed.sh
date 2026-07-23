@@ -45,6 +45,9 @@ else
         docker compose exec -T mediawiki php maintenance/run.php edit \
             -u verbivore --summary seed "Corpus Article"
 fi
+# The root-run installer leaves the sqlite file 600/root; apache runs as
+# www-data and 500s on it (bit us mid-harvest). Idempotent, so always fix.
+docker compose exec mediawiki chown -R www-data:www-data /var/www/data
 
 # Superset: db migrate + admin + examples (the ECharts dashboards ARE the
 # point — canvas content the effect model's visual channel exists for).
