@@ -8,9 +8,15 @@ repository.workspace = true
 
 [dependencies]
 anyhow = "1.0.104"
+burn = { version = "0.21", features = ["train", "metal", "ndarray"] }
 image = { version = "0.25.10", default-features = false, features = ["png"] }
+sha2 = "0.11.0"
 verbivore-dataset = { version = "0.1.0", path = "../verbivore-dataset" }
 
 [[bin]]
 name = "effect-baseline"
 path = "src/bin/effect_baseline.rs"
+
+[[bin]]
+name = "effect-spike"
+path = "src/bin/effect_spike.rs"

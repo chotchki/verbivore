@@ -7158,7 +7158,9 @@ name = "verbivore-effect"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "burn",
  "image",
+ "sha2 0.11.0",
  "verbivore-dataset",
 ]
 
