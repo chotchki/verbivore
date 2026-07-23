@@ -78,6 +78,22 @@ enum Cmd {
         #[arg(long)]
         diagnostics: Option<PathBuf>,
     },
+    /// Repair a broken verb: re-ground the failing step's intent against the
+    /// live page, patch the selector, demote to candidate, verify
+    RepairVerb {
+        /// Verb store root
+        #[arg(long)]
+        verbs: PathBuf,
+        /// App label the verb lives under
+        #[arg(long)]
+        app: String,
+        /// Verb id
+        #[arg(long)]
+        id: String,
+        /// Settle window in ms
+        #[arg(long, default_value_t = 600)]
+        settle_ms: u64,
+    },
     /// Sabotage harness: click each element for real, then rewired to dead
     /// pixels, and check the signals-OR-visual gate notices the difference
     Sabotage {
@@ -182,6 +198,30 @@ async fn main() -> Result<()> {
                     }
                     anyhow::bail!("verb {id} broke");
                 }
+            }
+        }
+        Cmd::RepairVerb {
+            verbs,
+            app,
+            id,
+            settle_ms,
+        } => {
+            let store = verbivore_verb::VerbStore::open(verbs)?;
+            let ctx = verbivore_executor::ExecutionContext {
+                settle_ms,
+                ..Default::default()
+            };
+            let executor = verbivore_executor::Executor::launch().await?;
+            let outcome =
+                verbivore_executor::repair::repair_verb(&executor, &store, &app, &id, &ctx)
+                    .await?;
+            executor.close().await?;
+            println!("{}", serde_json::to_string_pretty(&outcome)?);
+            if matches!(
+                outcome,
+                verbivore_executor::repair::RepairOutcome::Unrepairable { .. }
+            ) {
+                anyhow::bail!("verb {id} is not repairable by re-grounding");
             }
         }
         Cmd::Sabotage {

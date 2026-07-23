@@ -5,7 +5,7 @@
 //! model faces vs SSIM). Container scoping happens before this — callers crop
 //! the candidate set, we only order it.
 
-use verbivore_dataset::ElementLabel;
+use crate::ElementLabel;
 
 /// Candidate index + score, sorted best-first. Scores are comparable only
 /// within one call — they rank, they don't calibrate.
@@ -128,7 +128,7 @@ fn is_role_word(token: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use verbivore_dataset::Bbox;
+    use crate::Bbox;
 
     fn candidate(role: &str, name: &str) -> ElementLabel {
         ElementLabel {

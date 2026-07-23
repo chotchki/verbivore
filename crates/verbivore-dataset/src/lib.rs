@@ -7,6 +7,8 @@
 //! `<id>.json` sidecars. Ids are content hashes of the png, so identical
 //! screenshots dedupe to one sample no matter how often they're captured.
 
+pub mod rank;
+
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -53,6 +55,35 @@ pub struct Bbox {
     pub y: f64,
     pub w: f64,
     pub h: f64,
+}
+
+/// Intersection-over-union; 0.0 for degenerate boxes.
+pub fn iou(a: &Bbox, b: &Bbox) -> f64 {
+    let ix = (a.x + a.w).min(b.x + b.w) - a.x.max(b.x);
+    let iy = (a.y + a.h).min(b.y + b.h) - a.y.max(b.y);
+    if ix <= 0.0 || iy <= 0.0 {
+        return 0.0;
+    }
+    let inter = ix * iy;
+    let union = a.w * a.h + b.w * b.h - inter;
+    if union <= 0.0 { 0.0 } else { inter / union }
+}
+
+/// Snaps a predicted box (vision output) to the best-overlapping label —
+/// the bridge from pixels back to the a11y element a selector can address.
+/// None when nothing clears `min_iou`: a detection over dead space must not
+/// snap to whatever is least far away.
+pub fn snap_to_label<'l>(
+    pred: &Bbox,
+    labels: &'l [ElementLabel],
+    min_iou: f64,
+) -> Option<&'l ElementLabel> {
+    labels
+        .iter()
+        .map(|l| (l, iou(pred, &l.bbox)))
+        .filter(|(_, v)| *v >= min_iou)
+        .max_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(l, _)| l)
 }
 
 /// One training label: where an interactive element is and what it is.
@@ -535,5 +566,37 @@ mod tests {
         assert_eq!(stats.by_role["link"], 1);
         assert_eq!(stats.by_role["tab"], 1);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod snap_tests {
+    use super::*;
+
+    fn lbl(x: f64, w: f64) -> ElementLabel {
+        ElementLabel {
+            bbox: Bbox { x, y: 0.0, w, h: 40.0 },
+            role: "button".into(),
+            name: None,
+        }
+    }
+
+    #[test]
+    fn snaps_to_best_overlap_and_refuses_dead_space() {
+        let labels = vec![lbl(0.0, 100.0), lbl(150.0, 100.0)];
+        let pred = Bbox { x: 140.0, y: 0.0, w: 100.0, h: 40.0 };
+        let hit = snap_to_label(&pred, &labels, 0.5).expect("overlaps second");
+        assert_eq!(hit.bbox.x, 150.0);
+        // A detection over nothing must return None, not the least-far label.
+        let dead = Bbox { x: 500.0, y: 200.0, w: 50.0, h: 20.0 };
+        assert!(snap_to_label(&dead, &labels, 0.5).is_none());
+    }
+
+    #[test]
+    fn iou_sane() {
+        let a = Bbox { x: 0.0, y: 0.0, w: 10.0, h: 10.0 };
+        assert!((iou(&a, &a) - 1.0).abs() < 1e-12);
+        let b = Bbox { x: 20.0, y: 0.0, w: 10.0, h: 10.0 };
+        assert_eq!(iou(&a, &b), 0.0);
     }
 }

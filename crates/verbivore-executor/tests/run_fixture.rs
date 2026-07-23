@@ -255,3 +255,48 @@ async fn breakage_writes_a_diagnostic_bundle() -> anyhow::Result<()> {
     }
     Ok(())
 }
+
+#[tokio::test]
+async fn repair_heals_a_drifted_selector_from_its_intent() -> anyhow::Result<()> {
+    // The verb-rot scenario: the button's accessible name changed upstream
+    // ("Toggle details" was authored as something that no longer exists).
+    // Repair must re-ground from the step's INTENT against the live page,
+    // patch the selector, demote to candidate, and verify the patched run.
+    let mut drifted = record(
+        vec![click("Togle detials", "details toggle", EffectExpectation::Change)],
+        vec![],
+    );
+    drifted.id = "rotted".into();
+
+    let dir = tempfile::tempdir()?;
+    let store = verbivore_verb::VerbStore::open(dir.path())?;
+    store.save(&drifted)?;
+
+    let executor = Executor::launch().await?;
+    let outcome = verbivore_executor::repair::repair_verb(
+        &executor,
+        &store,
+        "fixture",
+        "rotted",
+        &ExecutionContext::default(),
+    )
+    .await?;
+    executor.close().await?;
+
+    match outcome {
+        verbivore_executor::repair::RepairOutcome::Repaired { step, old, new, verified } => {
+            assert_eq!(step, 0);
+            assert_eq!(old.name.as_deref(), Some("Togle detials"));
+            assert_eq!(new.name.as_deref(), Some("Toggle details"), "intent must re-ground");
+            assert!(verified, "patched record must run to Passed");
+        }
+        other => panic!("expected Repaired, got {other:?}"),
+    }
+    let patched = store.load("fixture", "rotted")?;
+    assert_eq!(patched.status, VerbStatus::Candidate, "grounding changed -> re-review");
+    assert!(
+        patched.variants[0].evidence[0].is_some(),
+        "fresh evidence for the repaired rendering"
+    );
+    Ok(())
+}

@@ -107,6 +107,30 @@ pub struct Selector {
     pub nth: Option<usize>,
 }
 
+/// Selector snapping, the last hop of grounding: a chosen label becomes the
+/// durable role+name address a record stores. `nth` is set ONLY when the
+/// page has role+name twins — an unambiguous selector must stay robust to
+/// unrelated elements appearing or leaving.
+pub fn selector_for(
+    label: &verbivore_dataset::ElementLabel,
+    all_labels: &[verbivore_dataset::ElementLabel],
+) -> Selector {
+    let twins: Vec<&verbivore_dataset::ElementLabel> = all_labels
+        .iter()
+        .filter(|l| l.role == label.role && l.name == label.name)
+        .collect();
+    // Twins share role+name but never a bbox — position by geometry so a
+    // cloned label still finds itself.
+    let nth = (twins.len() > 1)
+        .then(|| twins.iter().position(|l| l.bbox == label.bbox))
+        .flatten();
+    Selector {
+        role: label.role.clone(),
+        name: label.name.clone(),
+        nth,
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum EffectExpectation {
@@ -431,5 +455,40 @@ mod tests {
         assert!(json.contains(r#""expect": "change""#));
         assert!(json.contains(r#""grounded_by": "grounding-v2@61525ae""#));
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod snap_tests {
+    use super::*;
+    use verbivore_dataset::ElementLabel;
+
+    fn label(role: &str, name: &str, x: f64) -> ElementLabel {
+        ElementLabel {
+            bbox: Bbox { x, y: 10.0, w: 80.0, h: 30.0 },
+            role: role.into(),
+            name: Some(name.into()),
+        }
+    }
+
+    #[test]
+    fn unique_labels_get_no_nth() {
+        let labels = vec![label("button", "Save", 10.0), label("button", "Cancel", 100.0)];
+        let s = selector_for(&labels[0], &labels);
+        assert_eq!((s.role.as_str(), s.nth), ("button", None));
+    }
+
+    #[test]
+    fn twins_get_positional_nth_even_from_clones() {
+        // Two "Submit" buttons (one per form) — the container-scoping case.
+        let labels = vec![
+            label("button", "Submit", 10.0),
+            label("button", "Cancel", 100.0),
+            label("button", "Submit", 200.0),
+        ];
+        let cloned = labels[2].clone();
+        let s = selector_for(&cloned, &labels);
+        assert_eq!(s.nth, Some(1), "second Submit twin");
+        assert_eq!(selector_for(&labels[0], &labels).nth, Some(0));
     }
 }

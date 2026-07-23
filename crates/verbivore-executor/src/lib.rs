@@ -12,6 +12,8 @@
 //! 4.4 adds the pair model over the captured pngs. Labels re-extract before
 //! every step because menus only exist post-interaction.
 
+pub mod repair;
+
 use std::collections::HashMap;
 
 use anyhow::{Context, Result, anyhow};
@@ -88,11 +90,22 @@ pub struct StepReport {
     pub after_png: Vec<u8>,
 }
 
+/// The page as it was when target resolution failed — everything re-grounding
+/// needs without reopening the browser.
+#[derive(Debug, Serialize)]
+pub struct BreakScene {
+    pub labels: Vec<ElementLabel>,
+    #[serde(skip)]
+    pub screenshot_png: Vec<u8>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct VerbRun {
     pub verb_id: String,
     pub steps: Vec<StepReport>,
     pub verdict: RunVerdict,
+    /// Present when the verdict is a target-resolution breakage.
+    pub break_scene: Option<BreakScene>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -220,6 +233,7 @@ impl Executor {
             verb_id: record.id.clone(),
             steps,
             verdict: RunVerdict::Broken { breakage },
+            break_scene: None,
         };
 
         if record.status != VerbStatus::Accepted && !ctx.allow_candidates {
@@ -254,6 +268,7 @@ impl Executor {
                 verb_id: record.id.clone(),
                 steps,
                 verdict: RunVerdict::Broken { breakage },
+                break_scene: None,
             })
         };
 
@@ -265,24 +280,27 @@ impl Executor {
                     let labels = self.harvester.labels_on(page, variation).await?;
                     let label = match resolve(&labels, &target.selector) {
                         Ok(l) => l,
-                        Err(ResolveMiss::NotFound) => {
-                            return broken(
-                                steps,
-                                Breakage::TargetNotFound {
+                        Err(miss) => {
+                            let breakage = match miss {
+                                ResolveMiss::NotFound => Breakage::TargetNotFound {
                                     step: i,
                                     selector: target.selector.clone(),
                                 },
-                            );
-                        }
-                        Err(ResolveMiss::Ambiguous { count }) => {
-                            return broken(
-                                steps,
-                                Breakage::AmbiguousTarget {
+                                ResolveMiss::Ambiguous { count } => Breakage::AmbiguousTarget {
                                     step: i,
                                     selector: target.selector.clone(),
                                     count,
                                 },
-                            );
+                            };
+                            // Capture the scene the failure happened in —
+                            // re-grounding wants THIS page, not a fresh load.
+                            let screenshot_png = effect_capture::shot(page).await?;
+                            return Ok(VerbRun {
+                                verb_id: record.id.clone(),
+                                steps,
+                                verdict: RunVerdict::Broken { breakage },
+                                break_scene: Some(BreakScene { labels, screenshot_png }),
+                            });
                         }
                     };
                     // Labels are screenshot px; dispatch wants CSS px.
@@ -400,6 +418,7 @@ impl Executor {
             verb_id: record.id.clone(),
             steps,
             verdict: RunVerdict::Passed,
+            break_scene: None,
         })
     }
 }

@@ -7,5 +7,7 @@ pub mod decode;
 pub mod eval;
 pub mod loss;
 pub mod model;
-pub mod rank;
+/// Re-export: rank moved to the burn-free dataset crate so the executor's
+/// repair loop can use it without an ML-framework dep. Vision stays here.
+pub use verbivore_dataset::rank;
 pub mod train;
