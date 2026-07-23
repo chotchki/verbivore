@@ -32,19 +32,16 @@ async fn shot(page: &Page) -> Result<Vec<u8>> {
 pub struct ActionPair {
     pub before_png: Vec<u8>,
     pub after_png: Vec<u8>,
+    /// Activity during the action window, ambient already subtracted.
     pub signals: ActionSignals,
+    /// What the page did on its own in an equal window BEFORE the action —
+    /// animations, timers, analytics. The noise floor the label is judged above.
+    pub ambient: ActionSignals,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ActionSignals {
-    /// MutationObserver records (childList + characterData + attributes).
-    pub dom_mutations: u64,
-    /// Subset of mutations touching aria-* attributes (state flips).
-    pub aria_mutations: u64,
-    /// fetch()/XHR calls the action triggered (intent, not bytes — data:/cached
-    /// requests count too).
-    pub network_requests: u64,
-}
+/// Canonical signal type lives in verbivore-dataset so training reads the same
+/// shape the harvester writes.
+pub use verbivore_dataset::EffectSignals as ActionSignals;
 
 const OBSERVER_JS: &str = r#"
 window.__vb = { mutations: 0, aria: 0, requests: 0 };
@@ -91,8 +88,12 @@ pub(crate) async fn click_and_capture(
     y: f64,
     settle_ms: u64,
 ) -> Result<ActionPair> {
-    let before_png = shot(page).await?;
+    // Control window first: same duration, no action. Whatever fires here is
+    // the page's own noise (animations, timers), not the click's doing.
+    tokio::time::sleep(std::time::Duration::from_millis(settle_ms)).await;
+    let ambient = read_signals(page).await?;
 
+    let before_png = shot(page).await?;
     for kind in [
         DispatchMouseEventType::MousePressed,
         DispatchMouseEventType::MouseReleased,
@@ -102,20 +103,29 @@ pub(crate) async fn click_and_capture(
         params.click_count = Some(1);
         page.execute(params).await?;
     }
-
     tokio::time::sleep(std::time::Duration::from_millis(settle_ms)).await;
     let after_png = shot(page).await?;
+    let total = read_signals(page).await?;
 
-    let raw: String = page.evaluate(READ_JS).await?.into_value()?;
-    let counts: serde_json::Value = serde_json::from_str(&raw)?;
-    let get = |k: &str| counts.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
     Ok(ActionPair {
         before_png,
         after_png,
         signals: ActionSignals {
-            dom_mutations: get("mutations"),
-            aria_mutations: get("aria"),
-            network_requests: get("requests"),
+            dom_mutations: total.dom_mutations.saturating_sub(ambient.dom_mutations),
+            aria_mutations: total.aria_mutations.saturating_sub(ambient.aria_mutations),
+            network_requests: total.network_requests.saturating_sub(ambient.network_requests),
         },
+        ambient,
+    })
+}
+
+async fn read_signals(page: &Page) -> Result<ActionSignals> {
+    let raw: String = page.evaluate(READ_JS).await?.into_value()?;
+    let counts: serde_json::Value = serde_json::from_str(&raw)?;
+    let get = |k: &str| counts.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+    Ok(ActionSignals {
+        dom_mutations: get("mutations"),
+        aria_mutations: get("aria"),
+        network_requests: get("requests"),
     })
 }

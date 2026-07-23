@@ -82,6 +82,164 @@ struct Manifest {
     format_version: u32,
 }
 
+/// CDP-derived activity counts around an action. Training labels only — verb
+/// runtime never sees these (canvas pages can't produce them).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct EffectSignals {
+    pub dom_mutations: u64,
+    pub aria_mutations: u64,
+    pub network_requests: u64,
+}
+
+/// What the pair teaches: did the action meaningfully change the page?
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EffectLabel {
+    Changed,
+    NoChange,
+}
+
+/// v1 rule: any signal delta above the ambient-subtracted floor is a change.
+/// Known noise: heavily animated pages can leak ambient activity into the
+/// action window — the subtraction narrows it, doesn't erase it.
+pub fn label_from_signals(action_delta: &EffectSignals) -> EffectLabel {
+    if action_delta.dom_mutations > 0
+        || action_delta.aria_mutations > 0
+        || action_delta.network_requests > 0
+    {
+        EffectLabel::Changed
+    } else {
+        EffectLabel::NoChange
+    }
+}
+
+/// Sidecar for one before/after pair.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PairMeta {
+    pub id: String,
+    pub url: String,
+    pub click: (f64, f64),
+    pub viewport_w: i64,
+    pub viewport_h: i64,
+    pub dpr: f64,
+    pub settle_ms: u64,
+    /// Ambient-subtracted action-window activity.
+    pub signals: EffectSignals,
+    /// The page's no-action noise floor over an equal window.
+    pub ambient: EffectSignals,
+    pub label: EffectLabel,
+}
+
+/// Effect-pair storage: `<root>/pairs-dataset.json` + `<root>/pairs/<id>.before.png`,
+/// `<id>.after.png`, `<id>.json`. Content-addressed over both images + click, so
+/// re-captures dedupe but the same screen clicked at two spots stays two pairs.
+pub struct PairDataset {
+    root: PathBuf,
+}
+
+impl PairDataset {
+    pub fn create(root: impl Into<PathBuf>) -> Result<Self> {
+        let root = root.into();
+        fs::create_dir_all(root.join("pairs"))?;
+        let manifest = root.join("pairs-dataset.json");
+        if manifest.exists() {
+            return Self::open(root);
+        }
+        fs::write(
+            &manifest,
+            serde_json::to_vec_pretty(&Manifest {
+                format_version: FORMAT_VERSION,
+            })?,
+        )?;
+        Ok(Self { root })
+    }
+
+    pub fn open(root: impl Into<PathBuf>) -> Result<Self> {
+        let root = root.into();
+        let manifest: Manifest = serde_json::from_slice(
+            &fs::read(root.join("pairs-dataset.json"))
+                .context("not a pair dataset: no pairs-dataset.json")?,
+        )?;
+        if manifest.format_version != FORMAT_VERSION {
+            bail!(
+                "pair dataset format v{} but this build reads v{FORMAT_VERSION}",
+                manifest.format_version
+            );
+        }
+        Ok(Self { root })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn add(
+        &self,
+        url: &str,
+        click: (f64, f64),
+        viewport_w: i64,
+        viewport_h: i64,
+        dpr: f64,
+        settle_ms: u64,
+        signals: EffectSignals,
+        ambient: EffectSignals,
+        before_png: &[u8],
+        after_png: &[u8],
+    ) -> Result<AddOutcome> {
+        let mut hasher = Sha256::new();
+        hasher.update(before_png);
+        hasher.update(after_png);
+        hasher.update(format!("{:.1},{:.1}", click.0, click.1));
+        let id = hex16(&hasher.finalize());
+        let meta_path = self.meta_json_path(&id);
+        if meta_path.exists() {
+            return Ok(AddOutcome { id, deduped: true });
+        }
+        fs::write(self.before_path(&id), before_png)?;
+        fs::write(self.after_path(&id), after_png)?;
+        let meta = PairMeta {
+            id: id.clone(),
+            url: url.to_owned(),
+            click,
+            viewport_w,
+            viewport_h,
+            dpr,
+            settle_ms,
+            signals,
+            ambient,
+            label: label_from_signals(&signals),
+        };
+        fs::write(meta_path, serde_json::to_vec_pretty(&meta)?)?;
+        Ok(AddOutcome { id, deduped: false })
+    }
+
+    pub fn pair_ids(&self) -> Result<Vec<String>> {
+        let mut ids = Vec::new();
+        for entry in fs::read_dir(self.root.join("pairs"))? {
+            let path = entry?.path();
+            if path.extension().is_some_and(|e| e == "json")
+                && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+            {
+                ids.push(stem.to_owned());
+            }
+        }
+        ids.sort();
+        Ok(ids)
+    }
+
+    pub fn meta(&self, id: &str) -> Result<PairMeta> {
+        Ok(serde_json::from_slice(&fs::read(self.meta_json_path(id))?)?)
+    }
+
+    pub fn before_path(&self, id: &str) -> PathBuf {
+        self.root.join("pairs").join(format!("{id}.before.png"))
+    }
+
+    pub fn after_path(&self, id: &str) -> PathBuf {
+        self.root.join("pairs").join(format!("{id}.after.png"))
+    }
+
+    fn meta_json_path(&self, id: &str) -> PathBuf {
+        self.root.join("pairs").join(format!("{id}.json"))
+    }
+}
+
 pub struct Dataset {
     root: PathBuf,
 }
@@ -293,6 +451,54 @@ mod tests {
         )?;
         assert!(Dataset::open(dir.path()).is_err());
         Ok(())
+    }
+
+    #[test]
+    fn pair_round_trip_and_click_aware_dedup() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let ds = PairDataset::create(dir.path())?;
+        let signals = EffectSignals {
+            dom_mutations: 3,
+            aria_mutations: 1,
+            network_requests: 0,
+        };
+        let first = ds.add(
+            "http://x/", (10.0, 20.0), 1280, 800, 1.0, 400,
+            signals, EffectSignals::default(), b"before", b"after",
+        )?;
+        assert!(!first.deduped);
+        // Same everything -> dedupe; same images, different click -> new pair.
+        assert!(ds.add(
+            "http://x/", (10.0, 20.0), 1280, 800, 1.0, 400,
+            signals, EffectSignals::default(), b"before", b"after",
+        )?.deduped);
+        assert!(!ds.add(
+            "http://x/", (99.0, 99.0), 1280, 800, 1.0, 400,
+            EffectSignals::default(), EffectSignals::default(), b"before", b"after",
+        )?.deduped);
+
+        let ds = PairDataset::open(dir.path())?;
+        assert_eq!(ds.pair_ids()?.len(), 2);
+        let meta = ds.meta(&first.id)?;
+        assert_eq!(meta.label, EffectLabel::Changed);
+        assert_eq!(meta.signals.dom_mutations, 3);
+        assert_eq!(fs::read(ds.before_path(&first.id))?, b"before");
+        Ok(())
+    }
+
+    #[test]
+    fn labels_follow_the_signal_floor() {
+        assert_eq!(
+            label_from_signals(&EffectSignals::default()),
+            EffectLabel::NoChange
+        );
+        for signals in [
+            EffectSignals { dom_mutations: 1, ..Default::default() },
+            EffectSignals { aria_mutations: 1, ..Default::default() },
+            EffectSignals { network_requests: 1, ..Default::default() },
+        ] {
+            assert_eq!(label_from_signals(&signals), EffectLabel::Changed);
+        }
     }
 
     #[test]
