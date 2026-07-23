@@ -19,7 +19,7 @@ use futures::StreamExt;
 use tokio::task::JoinHandle;
 use verbivore_dataset::Dataset;
 
-pub use labels::{Bbox, ElementLabel};
+pub use labels::{Bbox, ContainerInfo, ElementLabel, LabeledElement};
 
 /// Default capture viewport. Labels are only valid against the screenshot they
 /// were captured with — same viewport, DPR 1 — the pair is the dataset contract.
@@ -230,6 +230,19 @@ impl Harvester {
         let (vw, vh) = variation.viewport;
         let ax = page.execute(GetFullAxTreeParams::default()).await?;
         labels::extract(page, &ax.result.nodes, vw as f64, vh as f64, variation.dpr).await
+    }
+
+    /// Labels WITH their container ancestry — what the crawler proposes verbs
+    /// from ("submit button inside the login form" is a task; a bare button
+    /// is just a click).
+    pub async fn page_map(
+        &self,
+        page: &chromiumoxide::Page,
+        variation: &Variation,
+    ) -> Result<Vec<LabeledElement>> {
+        let (vw, vh) = variation.viewport;
+        let ax = page.execute(GetFullAxTreeParams::default()).await?;
+        labels::extract_full(page, &ax.result.nodes, vw as f64, vh as f64, variation.dpr).await
     }
 
     pub async fn snapshot_with(&self, url: &str, variation: &Variation) -> Result<PageSnapshot> {

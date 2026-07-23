@@ -12,6 +12,7 @@
 //! 4.4 adds the pair model over the captured pngs. Labels re-extract before
 //! every step because menus only exist post-interaction.
 
+pub mod accept;
 pub mod repair;
 
 use std::collections::HashMap;

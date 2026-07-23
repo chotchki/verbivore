@@ -1,11 +1,46 @@
 //! Turns a page's accessibility tree + geometry into training labels: bbox, role,
 //! accessible name per interactive element. The DOM does the annotating.
 
+use std::collections::HashMap;
+
 use anyhow::Result;
 use chromiumoxide::Page;
 use chromiumoxide::cdp::browser_protocol::accessibility::{AxNode, AxValue};
 use chromiumoxide::cdp::browser_protocol::dom::GetContentQuadsParams;
 pub use verbivore_dataset::{Bbox, ElementLabel, INTERACTIVE_ROLES};
+
+/// Ax roles that scope tasks: an element inside one of these belongs to a
+/// nameable region ("login form", "main navigation") — the container intents
+/// verbs are scoped by.
+pub const CONTAINER_ROLES: &[&str] = &[
+    "form",
+    "dialog",
+    "alertdialog",
+    "navigation",
+    "search",
+    "toolbar",
+    "menu",
+    "menubar",
+    "tablist",
+    "banner",
+    "complementary",
+    "contentinfo",
+    "region",
+];
+
+/// The nearest container ancestor of an interactive element.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ContainerInfo {
+    pub role: String,
+    pub name: Option<String>,
+}
+
+/// An interactive element plus where it lives — the crawler's raw material.
+#[derive(Debug, Clone)]
+pub struct LabeledElement {
+    pub label: ElementLabel,
+    pub container: Option<ContainerInfo>,
+}
 
 /// Candidates and the occlusion hit-test work in CSS px (elementFromPoint's
 /// space); scaling by dpr into screenshot space is the LAST step.
@@ -16,6 +51,24 @@ pub(crate) async fn extract(
     viewport_h: f64,
     dpr: f64,
 ) -> Result<Vec<ElementLabel>> {
+    Ok(extract_full(page, nodes, viewport_w, viewport_h, dpr)
+        .await?
+        .into_iter()
+        .map(|e| e.label)
+        .collect())
+}
+
+/// Like `extract`, but each element carries its nearest container ancestor —
+/// found by walking `parent_id` links until a [`CONTAINER_ROLES`] role.
+pub(crate) async fn extract_full(
+    page: &Page,
+    nodes: &[AxNode],
+    viewport_w: f64,
+    viewport_h: f64,
+    dpr: f64,
+) -> Result<Vec<LabeledElement>> {
+    let by_id: HashMap<&str, &AxNode> =
+        nodes.iter().map(|n| (n.node_id.inner().as_str(), n)).collect();
     let mut candidates = Vec::new();
     for node in nodes {
         if node.ignored {
@@ -48,25 +101,49 @@ pub(crate) async fn extract(
         let Some(bbox) = clamp_to_viewport(bbox, viewport_w, viewport_h) else {
             continue;
         };
-        candidates.push(ElementLabel {
-            bbox,
-            role,
-            name: ax_str(node.name.as_ref()),
-        });
+        candidates.push((
+            ElementLabel {
+                bbox,
+                role,
+                name: ax_str(node.name.as_ref()),
+            },
+            container_of(node, &by_id),
+        ));
     }
     let visible = occlusion_filter(page, candidates).await?;
     Ok(visible
         .into_iter()
-        .map(|mut l| {
-            l.bbox = Bbox {
-                x: l.bbox.x * dpr,
-                y: l.bbox.y * dpr,
-                w: l.bbox.w * dpr,
-                h: l.bbox.h * dpr,
+        .map(|(mut label, container)| {
+            label.bbox = Bbox {
+                x: label.bbox.x * dpr,
+                y: label.bbox.y * dpr,
+                w: label.bbox.w * dpr,
+                h: label.bbox.h * dpr,
             };
-            l
+            LabeledElement { label, container }
         })
         .collect())
+}
+
+/// Nearest ancestor with a container role. Ignored ancestors still link the
+/// chain — only their ROLE is disqualified, not their position in it.
+fn container_of(node: &AxNode, by_id: &HashMap<&str, &AxNode>) -> Option<ContainerInfo> {
+    let mut current = node.parent_id.as_ref();
+    // Depth guard: a cycle in parent links must not hang the harvest.
+    for _ in 0..64 {
+        let parent = by_id.get(current?.inner().as_str())?;
+        if !parent.ignored
+            && let Some(role) = ax_str(parent.role.as_ref())
+            && CONTAINER_ROLES.contains(&role.as_str())
+        {
+            return Some(ContainerInfo {
+                role,
+                name: ax_str(parent.name.as_ref()),
+            });
+        }
+        current = parent.parent_id.as_ref();
+    }
+    None
 }
 
 /// Drops candidates whose center is covered by something outside their own box.
@@ -76,14 +153,14 @@ pub(crate) async fn extract(
 /// to sit entirely inside the candidate's box.
 async fn occlusion_filter(
     page: &Page,
-    candidates: Vec<ElementLabel>,
-) -> Result<Vec<ElementLabel>> {
+    candidates: Vec<(ElementLabel, Option<ContainerInfo>)>,
+) -> Result<Vec<(ElementLabel, Option<ContainerInfo>)>> {
     if candidates.is_empty() {
         return Ok(candidates);
     }
     let centers: Vec<(f64, f64)> = candidates
         .iter()
-        .map(|c| (c.bbox.x + c.bbox.w / 2.0, c.bbox.y + c.bbox.h / 2.0))
+        .map(|(c, _)| (c.bbox.x + c.bbox.w / 2.0, c.bbox.y + c.bbox.h / 2.0))
         .collect();
     let expr = format!(
         "{}.map(([x, y]) => {{ const el = document.elementFromPoint(x, y); \
@@ -97,13 +174,14 @@ async fn occlusion_filter(
     Ok(candidates
         .into_iter()
         .zip(hits)
-        .filter_map(|(c, hit)| {
+        .filter_map(|(candidate, hit)| {
             let (hx, hy, hw, hh) = hit?;
+            let c = &candidate.0;
             let inside = hx >= c.bbox.x - TOL
                 && hy >= c.bbox.y - TOL
                 && hx + hw <= c.bbox.x + c.bbox.w + TOL
                 && hy + hh <= c.bbox.y + c.bbox.h + TOL;
-            inside.then_some(c)
+            inside.then_some(candidate)
         })
         .collect())
 }

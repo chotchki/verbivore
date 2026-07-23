@@ -1,0 +1,20 @@
+[package]
+name = "verbivore-generator"
+description = "Verb generation: crawl an app into task-level candidate records, or ground one intent phrase into a verb"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow = "1.0.104"
+chromiumoxide = "0.9.1"
+humantime = "2.3.0"
+verbivore-dataset = { version = "0.1.0", path = "../verbivore-dataset" }
+verbivore-harvester = { version = "0.1.0", path = "../verbivore-harvester" }
+verbivore-verb = { version = "0.1.0", path = "../verbivore-verb" }
+
+[dev-dependencies]
+tempfile = "3.27.0"
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }
+verbivore-executor = { version = "0.1.0", path = "../verbivore-executor" }

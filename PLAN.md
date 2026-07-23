@@ -20,10 +20,10 @@ This PLAN.md is driven by `claude-plan-bridge` (FORMATv2):
 -->
 
 ## Phase 5 - Generation + end-to-end
-- [ ] 5.1 - Crawler: walk a corpus app, propose task-level candidate verbs with scoped intents
-- [ ] 5.2 - Candidate review + accept flow (status flip on the record)
-- [ ] 5.3 - generate-verb CLI: intent phrase to accepted verb record
-- [ ] 5.4 - End-to-end: generated verb runs deterministically, sabotage self-reports
+- [x] 5.1 - Crawler: walk a corpus app, propose task-level candidate verbs with scoped intents. verbivore-generator: container-aware page_map (ax parent_id walk to form/nav/dialog ancestors), pure propose() rules — NAMED forms become one task verb (type fields + submit click, container intents throughout), nav-container links become open-X, standalone buttons press-X; unnamed/whitespace-named forms and content-link soup skipped (candidate spam wastes review attention). Same-host BFS, logout/delete deny list, never clicks. Live: 9 candidates from 8 gitea pages
+- [x] 5.2 - Candidate review + accept flow (status flip on the record). review_and_accept in executor: a candidate earns Accepted by RUNNING — Passed flips status, breakage rejects with the typed reason and status stays. accept-verb + list-verbs CLI
+- [x] 5.3 - generate-verb CLI: intent phrase to accepted verb record. rank over live page_map -> selector snap -> candidate -> optional immediate review (--accept). Live on gitea: "the search button" grounded, accepted
+- [x] 5.4 - End-to-end: generated verb runs deterministically, sabotage self-reports. full_loop e2e on the fixture: crawl -> review accepts press-toggle-details, REJECTS press-do-nothing as EffectSilence{step:0} (the self-report), accepted verb re-runs Passed. Real-app pass on gitea: crawl -> accept -> run-verb with the trained gate judging (visual 1.0 + navigated)
 - [ ] 5.5 - README + verb-format doc, sweep phase to archive
 
 # Backlog (not yet phased)

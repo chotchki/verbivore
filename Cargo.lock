@@ -3428,6 +3428,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
+name = "humantime"
+version = "2.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "15cdd26707701c53297e2fa6afb323d55fbc1d0810c3aec078ae3ef0424c3c15"
+
+[[package]]
 name = "hybrid-array"
 version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6268,7 +6274,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -7143,6 +7149,7 @@ dependencies = [
  "verbivore-dataset",
  "verbivore-effect",
  "verbivore-executor",
+ "verbivore-generator",
  "verbivore-harvester",
  "verbivore-verb",
 ]
@@ -7183,6 +7190,21 @@ dependencies = [
  "tempfile",
  "tokio",
  "verbivore-dataset",
+ "verbivore-harvester",
+ "verbivore-verb",
+]
+
+[[package]]
+name = "verbivore-generator"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chromiumoxide",
+ "humantime",
+ "tempfile",
+ "tokio",
+ "verbivore-dataset",
+ "verbivore-executor",
  "verbivore-harvester",
  "verbivore-verb",
 ]

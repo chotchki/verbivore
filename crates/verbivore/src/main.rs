@@ -53,6 +53,62 @@ enum Cmd {
         settle_ms: u64,
         urls: Vec<String>,
     },
+    /// Crawl an app same-host BFS, proposing task-level candidate verbs
+    Crawl {
+        /// Verb store root
+        #[arg(long)]
+        verbs: PathBuf,
+        /// App label override (defaults to host-port slug of the start url)
+        #[arg(long)]
+        app: Option<String>,
+        /// Page budget
+        #[arg(long, default_value_t = 10)]
+        max_pages: usize,
+        /// Proposal cap per page
+        #[arg(long, default_value_t = 20)]
+        max_per_page: usize,
+        /// Extra denied url substrings (logout/delete-style defaults always apply)
+        #[arg(long)]
+        deny: Vec<String>,
+        start_url: String,
+    },
+    /// Ground one intent phrase on a page into a candidate verb record
+    GenerateVerb {
+        /// Verb store root
+        #[arg(long)]
+        verbs: PathBuf,
+        /// App label override
+        #[arg(long)]
+        app: Option<String>,
+        /// Page to ground on
+        #[arg(long)]
+        url: String,
+        /// Also run the review-accept flow immediately
+        #[arg(long, default_value_t = false)]
+        accept: bool,
+        intent: String,
+    },
+    /// Review a candidate by RUNNING it; only a Passed run flips to accepted
+    AcceptVerb {
+        /// Verb store root
+        #[arg(long)]
+        verbs: PathBuf,
+        #[arg(long)]
+        app: String,
+        #[arg(long)]
+        id: String,
+        /// Settle window in ms
+        #[arg(long, default_value_t = 600)]
+        settle_ms: u64,
+    },
+    /// List stored verbs for an app
+    ListVerbs {
+        /// Verb store root
+        #[arg(long)]
+        verbs: PathBuf,
+        #[arg(long)]
+        app: String,
+    },
     /// Run a stored verb record under an execution context; nonzero exit on
     /// any breakage (typed, printed as json for the repair loop)
     RunVerb {
@@ -154,6 +210,108 @@ async fn main() -> Result<()> {
                 println!("{url}: {} added, {} deduped", outcome.added, outcome.deduped);
             }
             harvester.close().await?;
+        }
+        Cmd::Crawl {
+            verbs,
+            app,
+            max_pages,
+            max_per_page,
+            deny,
+            start_url,
+        } => {
+            let store = verbivore_verb::VerbStore::open(verbs)?;
+            let app = app.unwrap_or_else(|| verbivore_generator::app_label(&start_url));
+            let mut denied: Vec<String> = verbivore_generator::crawl::DEFAULT_DENY
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+            denied.extend(deny);
+            let harvester = Harvester::launch().await?;
+            let report = verbivore_generator::crawl::crawl(
+                &harvester,
+                &store,
+                &app,
+                &start_url,
+                max_pages,
+                max_per_page,
+                &denied,
+            )
+            .await?;
+            harvester.close().await?;
+            println!(
+                "{app}: {} pages, {} candidates proposed, {} already stored",
+                report.pages, report.proposed, report.skipped_existing
+            );
+        }
+        Cmd::GenerateVerb {
+            verbs,
+            app,
+            url,
+            accept,
+            intent,
+        } => {
+            let store = verbivore_verb::VerbStore::open(verbs)?;
+            let app = app.unwrap_or_else(|| verbivore_generator::app_label(&url));
+            let harvester = Harvester::launch().await?;
+            let record =
+                verbivore_generator::generate::generate(&harvester, &store, &app, &url, &intent)
+                    .await?;
+            harvester.close().await?;
+            println!(
+                "{}: candidate written ({} step(s), grounded by {})",
+                record.id,
+                record.steps.len(),
+                record.provenance.grounded_by
+            );
+            if accept {
+                let executor = verbivore_executor::Executor::launch().await?;
+                let outcome = verbivore_executor::accept::review_and_accept(
+                    &executor,
+                    &store,
+                    &app,
+                    &record.id,
+                    &verbivore_executor::ExecutionContext::default(),
+                )
+                .await?;
+                executor.close().await?;
+                println!("review: {}", serde_json::to_string(&outcome)?);
+            }
+        }
+        Cmd::AcceptVerb {
+            verbs,
+            app,
+            id,
+            settle_ms,
+        } => {
+            let store = verbivore_verb::VerbStore::open(verbs)?;
+            let ctx = verbivore_executor::ExecutionContext {
+                settle_ms,
+                ..Default::default()
+            };
+            let executor = verbivore_executor::Executor::launch().await?;
+            let outcome =
+                verbivore_executor::accept::review_and_accept(&executor, &store, &app, &id, &ctx)
+                    .await?;
+            executor.close().await?;
+            println!("{}", serde_json::to_string_pretty(&outcome)?);
+            if matches!(
+                outcome,
+                verbivore_executor::accept::AcceptOutcome::Rejected { .. }
+            ) {
+                anyhow::bail!("verb {id} failed review");
+            }
+        }
+        Cmd::ListVerbs { verbs, app } => {
+            let store = verbivore_verb::VerbStore::open(verbs)?;
+            for record in store.list(&app)? {
+                println!(
+                    "{:9} {:40} {} step(s)  \"{}\"",
+                    format!("{:?}", record.status).to_lowercase(),
+                    record.id,
+                    record.steps.len(),
+                    record.intent
+                );
+            }
         }
         Cmd::RunVerb {
             verbs,
