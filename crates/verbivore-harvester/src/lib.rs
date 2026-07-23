@@ -387,6 +387,27 @@ impl Harvester {
         Ok(outcome)
     }
 
+    /// Waits for client-side rendering to settle: polls the interactive
+    /// element count until two consecutive reads agree. Server-rendered pages
+    /// pass on the first pair; SPAs (grafana: 0 anchors at load, 32 after
+    /// React mounts) need it before any extraction is meaningful.
+    pub async fn settle_render(&self, page: &chromiumoxide::Page) -> Result<()> {
+        let mut last: i64 = -1;
+        for _ in 0..12 {
+            let count: i64 = page
+                .evaluate("document.querySelectorAll('a[href], button, [role]').length")
+                .await?
+                .into_value()
+                .unwrap_or(0);
+            if count == last && count > 0 {
+                return Ok(());
+            }
+            last = count;
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        }
+        Ok(()) // stable-or-timeout; an empty page is the caller's problem
+    }
+
     /// Shuts the browser down; dropping without this leaks a Chrome process.
     pub async fn close(mut self) -> Result<()> {
         self.browser.close().await?;

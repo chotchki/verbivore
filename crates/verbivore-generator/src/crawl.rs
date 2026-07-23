@@ -177,10 +177,14 @@ impl Frontier {
         }
     }
 
-    fn push(&mut self, href: &str) {
+    /// True when the url was admitted (novel, in-scope, under budgets).
+    fn push(&mut self, href: &str) -> bool {
         if let Some(clean) = self.guard.admit(href) {
             let tokens = url_tokens(&clean);
             self.queue.push((clean, tokens));
+            true
+        } else {
+            false
         }
     }
 
@@ -287,6 +291,7 @@ pub async fn crawl(
             }
         };
         report.pages += 1;
+        harvester.settle_render(&page).await?;
 
         let elements = harvester.page_map(&page, &variation).await?;
         gauge.observe(&elements);
@@ -353,6 +358,7 @@ pub async fn discover(
             }
         };
         visited.push(url.clone());
+        harvester.settle_render(&page).await?;
         let novel = gauge.observe(&harvester.page_map(&page, &variation).await?);
         eprintln!("discover: {url} (+{novel} element templates)");
         let hrefs: Vec<String> = page
@@ -360,8 +366,22 @@ pub async fn discover(
             .await?
             .into_value()?;
         page.close().await.ok();
+        let mut admitted = 0usize;
         for href in hrefs {
-            frontier.push(&href);
+            if frontier.push(&href) {
+                admitted += 1;
+            }
+        }
+        // Url structure we can't trust (href-dry page): probe navigation
+        // targets by DOM-chain diversity instead and admit wherever they land.
+        if admitted < 3 {
+            for landed in
+                crate::probe::probe_urls(harvester, &url, &variation, 6).await?
+            {
+                if frontier.push(&landed) {
+                    eprintln!("discover: probed -> {landed}");
+                }
+            }
         }
     }
     Ok(visited)

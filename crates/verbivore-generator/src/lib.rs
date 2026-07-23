@@ -5,6 +5,7 @@
 
 pub mod crawl;
 pub mod generate;
+pub mod probe;
 pub mod propose;
 
 use verbivore_verb::RenderingContext;

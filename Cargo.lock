@@ -7201,6 +7201,7 @@ dependencies = [
  "anyhow",
  "chromiumoxide",
  "humantime",
+ "serde",
  "tempfile",
  "tokio",
  "verbivore-dataset",

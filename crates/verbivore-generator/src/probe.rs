@@ -1,0 +1,198 @@
+//! Click-probing for pages whose url structure can't be trusted: when href
+//! discovery yields nearly nothing, navigation targets are keyed by their
+//! DOM CHAIN from the root (chris's design) and probed farthest-first with
+//! the same max-min selection the url frontier uses. Chain tokens carry
+//! structure (tags, roles, data-testids) AND text-node fragments — text is
+//! what separates same-menu siblings, whose structural chains are identical
+//! modulo child index (grafana's mega-menu: without text, "Dashboards" and
+//! "Explore" are distance-zero twins and one of them never gets probed).
+
+use std::collections::HashSet;
+
+use anyhow::Result;
+use serde::Deserialize;
+use verbivore_harvester::{Harvester, Variation, input};
+
+/// One clickable navigation candidate as the page presented it.
+#[derive(Debug, Clone, Deserialize)]
+pub struct NavCandidate {
+    pub tokens: Vec<String>,
+    /// nth-child css path for re-resolution on a fresh load.
+    pub selector: String,
+    pub x: f64,
+    pub y: f64,
+}
+
+/// Collects nav-ish clickables with their chain identities. Class names are
+/// deliberately ABSENT from tokens: css-in-js hashes churn per build and
+/// would make every chain unique. data-testid, roles, tags and text stay.
+const COLLECT_JS: &str = r#"
+(() => {
+    const out = [];
+    const navish = document.querySelectorAll(
+        "a[href], [role=link], [role=tab], [role=menuitem], nav button, aside button, header button, [role=navigation] button");
+    const direct = (el) => {
+        let t = '';
+        for (const n of el.childNodes) if (n.nodeType === 3) t += n.textContent;
+        return t.trim().toLowerCase().slice(0, 16);
+    };
+    for (const el of navish) {
+        if (out.length >= 60) break;
+        const r = el.getBoundingClientRect();
+        if (r.width < 4 || r.height < 4) continue;
+        if (r.left >= innerWidth || r.top >= innerHeight || r.right <= 0 || r.bottom <= 0) continue;
+        const leaf = (el.textContent || '').trim().toLowerCase().slice(0, 24);
+        if (/logout|sign out|signout|delete|remove/.test(leaf)) continue;
+        const tokens = new Set();
+        const parts = [];
+        let node = el;
+        while (node && node.tagName && node.tagName !== 'HTML') {
+            const tag = node.tagName.toLowerCase();
+            tokens.add(tag);
+            const role = node.getAttribute('role');
+            if (role) tokens.add('role:' + role);
+            const tid = node.getAttribute('data-testid');
+            if (tid) tokens.add('tid:' + tid.toLowerCase().slice(0, 24));
+            const t = direct(node);
+            if (t) tokens.add('txt:' + t);
+            let idx = 1, sib = node;
+            while ((sib = sib.previousElementSibling)) idx++;
+            parts.unshift(tag + ':nth-child(' + idx + ')');
+            node = node.parentElement;
+        }
+        if (leaf) tokens.add('leaf:' + leaf);
+        out.push({ tokens: [...tokens], selector: parts.join('>'), x: r.left + r.width / 2, y: r.top + r.height / 2 });
+    }
+    return out;
+})()
+"#;
+
+pub async fn collect_nav_candidates(page: &chromiumoxide::Page) -> Result<Vec<NavCandidate>> {
+    Ok(page.evaluate(COLLECT_JS).await?.into_value()?)
+}
+
+/// Farthest-first probe order over chain-token sets (greedy k-center, same
+/// shape as the url frontier's selection). Pure so the policy is testable
+/// without a browser.
+pub fn probe_order(candidates: &[NavCandidate]) -> Vec<usize> {
+    let sets: Vec<HashSet<String>> =
+        candidates.iter().map(|c| c.tokens.iter().cloned().collect()).collect();
+    let dist = |a: &HashSet<String>, b: &HashSet<String>| {
+        let union = a.union(b).count();
+        if union == 0 {
+            return 0.0;
+        }
+        1.0 - a.intersection(b).count() as f64 / union as f64
+    };
+    let mut order: Vec<usize> = Vec::new();
+    let mut remaining: Vec<usize> = (0..candidates.len()).collect();
+    while let Some(pos) = remaining
+        .iter()
+        .position(|&i| {
+            let best = remaining
+                .iter()
+                .map(|&j| {
+                    order
+                        .iter()
+                        .map(|&k| dist(&sets[j], &sets[k]))
+                        .fold(f64::INFINITY, f64::min)
+                })
+                .fold(f64::NEG_INFINITY, f64::max);
+            let mine = order
+                .iter()
+                .map(|&k| dist(&sets[i], &sets[k]))
+                .fold(f64::INFINITY, f64::min);
+            mine >= best
+        })
+    {
+        order.push(remaining.remove(pos));
+    }
+    order
+}
+
+/// Clicks up to `budget` chain-diverse candidates on fresh loads of
+/// `origin`, returning the urls navigation landed on. Every probe gets a
+/// clean page: SPA state must not leak between probes.
+pub async fn probe_urls(
+    harvester: &Harvester,
+    origin: &str,
+    variation: &Variation,
+    budget: usize,
+) -> Result<Vec<String>> {
+    let page = harvester.open_page(origin, variation).await?;
+    harvester.settle_render(&page).await?;
+    let candidates = collect_nav_candidates(&page).await?;
+    page.close().await.ok();
+
+    let mut landed = Vec::new();
+    for &i in probe_order(&candidates).iter().take(budget) {
+        let candidate = &candidates[i];
+        let page = match harvester.open_page(origin, variation).await {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        harvester.settle_render(&page).await?;
+        // Re-resolve on the fresh load — layout may have shifted.
+        let rect: Option<(f64, f64, f64, f64)> = page
+            .evaluate(format!(
+                "(() => {{ const el = document.querySelector({sel:?}); if (!el) return null; \
+                 const r = el.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; }})()",
+                sel = candidate.selector
+            ))
+            .await?
+            .into_value()
+            .unwrap_or(None);
+        if let Some((x, y, w, h)) = rect {
+            input::click_at(&page, x + w / 2.0, y + h / 2.0).await.ok();
+            tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+            if let Ok(url) = page.evaluate("location.href").await
+                && let Ok(url) = url.into_value::<String>()
+                && url != origin
+            {
+                landed.push(url);
+            }
+        }
+        page.close().await.ok();
+    }
+    Ok(landed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cand(tokens: &[&str]) -> NavCandidate {
+        NavCandidate {
+            tokens: tokens.iter().map(|s| s.to_string()).collect(),
+            selector: "nav".into(),
+            x: 0.0,
+            y: 0.0,
+        }
+    }
+
+    #[test]
+    fn text_tokens_separate_same_menu_siblings() {
+        // Identical structural chains; only the text distinguishes them —
+        // exactly the mega-menu case the text tokens exist for.
+        let menu = ["nav", "ul", "li", "a", "role:menuitem"];
+        let a = cand(&[&menu[..], &["leaf:dashboards"]].concat());
+        let b = cand(&[&menu[..], &["leaf:explore"]].concat());
+        let toolbar = cand(&["header", "button", "role:button", "leaf:settings"]);
+        let order = probe_order(&[a, b, toolbar]);
+        assert_eq!(order.len(), 3, "text keeps siblings distinct, all get probed");
+        assert_eq!(order[1], 2, "the structurally-distant toolbar probes before sibling #2");
+    }
+
+    #[test]
+    fn probe_order_is_farthest_first_and_total() {
+        let cands = vec![
+            cand(&["nav", "a", "leaf:one"]),
+            cand(&["nav", "a", "leaf:two"]),
+            cand(&["footer", "a", "leaf:legal"]),
+        ];
+        let order = probe_order(&cands);
+        assert_eq!(order[0], 0, "first candidate seeds");
+        assert_eq!(order[1], 2, "footer is farther than the nav sibling");
+        assert_eq!(order[2], 1);
+    }
+}
