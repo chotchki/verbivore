@@ -89,6 +89,11 @@ pub struct EffectSignals {
     pub dom_mutations: u64,
     pub aria_mutations: u64,
     pub network_requests: u64,
+    /// The action replaced the document entirely (link clicks do this). The
+    /// strongest possible Changed signal — counters don't survive it, so it's
+    /// detected by their absence.
+    #[serde(default)]
+    pub navigated: bool,
 }
 
 /// What the pair teaches: did the action meaningfully change the page?
@@ -102,7 +107,8 @@ pub enum EffectLabel {
 /// Known noise: heavily animated pages can leak ambient activity into the
 /// action window — the subtraction narrows it, doesn't erase it.
 pub fn label_from_signals(action_delta: &EffectSignals) -> EffectLabel {
-    if action_delta.dom_mutations > 0
+    if action_delta.navigated
+        || action_delta.dom_mutations > 0
         || action_delta.aria_mutations > 0
         || action_delta.network_requests > 0
     {
@@ -468,7 +474,7 @@ mod tests {
         let signals = EffectSignals {
             dom_mutations: 3,
             aria_mutations: 1,
-            network_requests: 0,
+            ..Default::default()
         };
         let first = ds.add(
             "http://x/", Some((10.0, 20.0)), 1280, 800, 1.0, 400,

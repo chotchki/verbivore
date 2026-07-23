@@ -90,3 +90,18 @@ async fn harvest_pairs_produces_labeled_mix() -> anyhow::Result<()> {
     assert_eq!(controls, 1, "exactly one no-action control");
     Ok(())
 }
+
+#[tokio::test]
+async fn navigating_click_labels_changed_via_navigation_signal() -> anyhow::Result<()> {
+    let fixture = "data:text/html,<html><body style=\"margin:0\">\
+        <a href=\"about:blank\" style=\"position:absolute;left:100px;top:100px;width:100px;height:40px;display:block\">leave</a>\
+        </body></html>";
+    let harvester = Harvester::launch().await?;
+    let pair = harvester
+        .capture_action_pair(fixture, Some((150.0, 120.0)), 400)
+        .await?;
+    harvester.close().await?;
+
+    assert!(pair.signals.navigated, "link click must read as navigation: {:?}", pair.signals);
+    Ok(())
+}

@@ -87,6 +87,9 @@ impl Variation {
 pub struct SweepOutcome {
     pub added: usize,
     pub deduped: usize,
+    /// Captures that errored and were skipped (logged to stderr) — one hostile
+    /// page must not kill a sweep.
+    pub errors: usize,
 }
 
 /// One captured page: the raw inputs every downstream stage feeds on.
@@ -315,7 +318,14 @@ impl Harvester {
         clicks.push(None); // the no-action control
 
         for click in clicks {
-            let pair = self.capture_action_pair(url, click, settle_ms).await?;
+            let pair = match self.capture_action_pair(url, click, settle_ms).await {
+                Ok(pair) => pair,
+                Err(e) => {
+                    eprintln!("pair capture failed at {click:?} on {url}: {e:#}");
+                    outcome.errors += 1;
+                    continue;
+                }
+            };
             let added = pairs.add(
                 url,
                 click,

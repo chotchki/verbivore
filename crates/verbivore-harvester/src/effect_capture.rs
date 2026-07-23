@@ -65,12 +65,11 @@ XMLHttpRequest.prototype.open = function (...args) {
 'armed'
 "#;
 
+// A missing __vb means the document was replaced under us — navigation.
 const READ_JS: &str = r#"
-JSON.stringify({
-    mutations: window.__vb.mutations,
-    aria: window.__vb.aria,
-    requests: window.__vb.requests
-})
+JSON.stringify(window.__vb
+    ? { mutations: window.__vb.mutations, aria: window.__vb.aria, requests: window.__vb.requests }
+    : { navigated: true })
 "#;
 
 /// Arms the signal counters on an already-loaded page. Call once per page,
@@ -109,14 +108,24 @@ pub(crate) async fn click_and_capture(
     let after_png = shot(page).await?;
     let total = read_signals(page).await?;
 
-    Ok(ActionPair {
-        before_png,
-        after_png,
-        signals: ActionSignals {
+    let signals = if total.navigated {
+        // Counters died with the old document; navigation IS the signal.
+        ActionSignals {
+            navigated: true,
+            ..Default::default()
+        }
+    } else {
+        ActionSignals {
             dom_mutations: total.dom_mutations.saturating_sub(ambient.dom_mutations),
             aria_mutations: total.aria_mutations.saturating_sub(ambient.aria_mutations),
             network_requests: total.network_requests.saturating_sub(ambient.network_requests),
-        },
+            navigated: false,
+        }
+    };
+    Ok(ActionPair {
+        before_png,
+        after_png,
+        signals,
         ambient,
     })
 }
@@ -129,5 +138,9 @@ async fn read_signals(page: &Page) -> Result<ActionSignals> {
         dom_mutations: get("mutations"),
         aria_mutations: get("aria"),
         network_requests: get("requests"),
+        navigated: counts
+            .get("navigated")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
     })
 }
