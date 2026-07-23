@@ -14,3 +14,8 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/chotchki/verbivore"
+
+# Deps optimized even in dev: debug-build ndarray convs turn a seconds-long
+# tensor test into minutes. Our own crates stay debug for real debugging.
+[profile.dev.package."*"]
+opt-level = 3
