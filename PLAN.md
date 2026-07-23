@@ -25,8 +25,8 @@ MEASURED MOTIVATION (v4, 2026-07-23): +100 epochs and +18 deep-page samples repl
 
 - [x] 6.1 - Labeler upgrade: interaction heuristics (cursor:pointer ROOTS only — the style inherits, tabindex, onclick, bare anchors) find what a11y missed -> IGNORE-REGIONS excluded from loss; SampleMeta.ignore (serde-default, old sidecars parse), dedupe now REFRESHES sidecars (labeling is labeler output, upgrades must reach captured samples), neg-focal masked at ignored cells (positives untouched — tested both directions). Known blind spot documented: addEventListener is invisible to a DOM scan, coverage is an upper bound
 - [x] 6.2 - Label-density page filter: label_coverage on every snapshot, harvest_variations skips below 0.5 and counts low_density in the sweep outcome; div-soup fixture test pins the gate
-- [ ] 6.3 - New corpus apps in docker compose, pinned + headlessly seeded: Superset (ECharts — also the canvas stand-in), Metabase, Ghost, Matomo (Discourse skipped: compose complexity is not worth one design system)
-- [ ] 6.4 - Crawler-driven harvest frontier: discover-urls mode reuses the 5.1 BFS so per-app url lists stop being hand-curated
+- [x] 6.3 - New corpus apps in docker compose, pinned + headlessly seeded: Superset 4.0.2 (ECharts canvas stand-in; anonymous via Gamma-shaped Public role — anonymous-as-Admin 500s on ownership pages), Metabase v0.50 (wizard driven via API), Ghost 5.87 (dev-mode sqlite, self-seeding), Heimdall 2.6.1 (zero setup). SWAPS from the original list: Discourse skipped (compose complexity), Matomo -> Heimdall (install wizard can't be cleanly automated)
+- [x] 6.4 - Crawler-driven harvest frontier: discover-urls reuses the 5.1 BFS + deny list, prints the visited frontier; smoke-tested on ghost (5 pages found)
 - [ ] 6.5 - Harvest sweep across new apps (variation grid) + merge, with the 6.2 report gating what enters training
 - [ ] 6.6 - Retrain + leave-one-app-out rotation re-run: measure whether corpus diversity moves cross-app mAP (the experiment this phase exists for)
 - [ ] 6.7 - Effect-pair harvest on new apps + gate re-validation (Superset canvas clicks are the visual-channel case signals can't see)
