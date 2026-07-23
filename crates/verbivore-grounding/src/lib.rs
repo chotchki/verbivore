@@ -3,5 +3,6 @@
 //! time, never in the runtime loop (canvas verbs are the one exception).
 
 pub mod data;
+pub mod decode;
 pub mod loss;
 pub mod model;
