@@ -55,10 +55,20 @@ struct ClassAcc {
     ground_truth: usize,
 }
 
+/// Element-height buckets in INPUT px (after letterbox). At the 0.5 scale a
+/// 1280-wide page gets, bucket 0 is body-text-sized: the range where local
+/// contrast cues (underlines, color vs neighbors) fall below one pixel.
+pub const SIZE_BUCKETS: [(f32, f32); 4] =
+    [(0.0, 8.0), (8.0, 12.0), (12.0, 20.0), (20.0, f32::INFINITY)];
+
 /// Feed it (detections, ground truth) per image; ask for metrics at the end.
 #[derive(Debug, Clone)]
 pub struct EvalAccumulator {
     classes: Vec<ClassAcc>,
+    /// [class][height bucket] — COCO-style size stratification: gt counts in
+    /// its own bucket, a TP detection in its matched gt's bucket, an FP in
+    /// the bucket of its own predicted height.
+    strata: Vec<[ClassAcc; 4]>,
     matched_iou_sum: f64,
     matched: usize,
 }
@@ -67,19 +77,28 @@ impl Default for EvalAccumulator {
     fn default() -> Self {
         Self {
             classes: vec![ClassAcc::default(); NUM_CLASSES],
+            strata: vec![Default::default(); NUM_CLASSES],
             matched_iou_sum: 0.0,
             matched: 0,
         }
     }
 }
 
+fn bucket_of(height: f32) -> usize {
+    SIZE_BUCKETS
+        .iter()
+        .position(|&(lo, hi)| height >= lo && height < hi)
+        .unwrap_or(SIZE_BUCKETS.len() - 1)
+}
+
 impl EvalAccumulator {
     /// Greedy match by score: each detection takes the best unmatched same-class
     /// ground truth at IoU >= 0.5; duplicates become false positives.
     pub fn observe(&mut self, detections: &[Detection], gt_boxes: &[[f32; 4]], gt_classes: &[i64]) {
-        for (&class, _) in gt_classes.iter().zip(gt_boxes) {
+        for (&class, gt) in gt_classes.iter().zip(gt_boxes) {
             if (class as usize) < NUM_CLASSES {
                 self.classes[class as usize].ground_truth += 1;
+                self.strata[class as usize][bucket_of(gt[3] - gt[1])].ground_truth += 1;
             }
         }
 
@@ -98,18 +117,32 @@ impl EvalAccumulator {
                     best = Some((i, overlap));
                 }
             }
-            let tp = if let Some((i, overlap)) = best {
+            let (tp, bucket) = if let Some((i, overlap)) = best {
                 taken[i] = true;
                 self.matched_iou_sum += overlap as f64;
                 self.matched += 1;
-                true
+                (true, bucket_of(gt_boxes[i][3] - gt_boxes[i][1]))
             } else {
-                false
+                (false, bucket_of(det.bbox[3] - det.bbox[1]))
             };
             if det.class < NUM_CLASSES {
                 self.classes[det.class].scored.push((det.score, tp));
+                self.strata[det.class][bucket].scored.push((det.score, tp));
             }
         }
+    }
+
+    /// AP per height bucket for one class — the resolution-hypothesis probe:
+    /// a steep climb with size means downscale is the binding constraint.
+    pub fn class_by_size(&self, class: usize) -> Vec<((f32, f32), usize, f64)> {
+        SIZE_BUCKETS
+            .iter()
+            .enumerate()
+            .map(|(b, &range)| {
+                let acc = &self.strata[class][b];
+                (range, acc.ground_truth, average_precision(acc))
+            })
+            .collect()
     }
 
     /// Mean AP@0.5 over classes that have ground truth.

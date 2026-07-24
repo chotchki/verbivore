@@ -286,6 +286,11 @@ impl Harvester {
         let ax = page.execute(GetFullAxTreeParams::default()).await?;
         let labels =
             labels::extract(&page, &ax.result.nodes, vw as f64, vh as f64, variation.dpr).await?;
+        // Harvest-only demotion: pointer-only links leave the labels BEFORE
+        // the heuristic scan, whose a[href] rule then sweeps their area into
+        // ignore-regions. Runtime resolution (labels_on) is untouched.
+        let (labels, _demoted) =
+            labels::demote_invisible_links(&page, labels, variation.dpr).await?;
         let scan = heuristics::scan(&page, &labels, variation.dpr).await?;
         let ax_nodes = ax
             .result

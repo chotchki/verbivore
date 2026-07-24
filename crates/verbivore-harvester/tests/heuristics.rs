@@ -57,3 +57,30 @@ async fn div_soup_fails_the_density_gate() -> anyhow::Result<()> {
     );
     Ok(())
 }
+
+/// One classically-styled link, one styled EXACTLY like its surrounding text
+/// (pointer cursor is its only affordance — invisible in a screenshot).
+const LINK_CONTRAST: &str = "data:text/html,<html><body style=\"margin:0;color:%23222;font-weight:400\">\
+    <p style=\"position:absolute;left:40px;top:40px;width:400px\">Some text with \
+      <a href=\"/evident\" style=\"color:%230645ad;text-decoration:underline\">an evident link</a> inside.</p>\
+    <p style=\"position:absolute;left:40px;top:120px;width:400px\">More text with \
+      <a href=\"/invisible\" style=\"color:%23222;text-decoration:none;cursor:pointer\">a camouflaged link</a> inside.</p>\
+    </body></html>";
+
+#[tokio::test]
+async fn pointer_only_links_demote_to_ignore() -> anyhow::Result<()> {
+    let harvester = Harvester::launch().await?;
+    let snap = harvester.snapshot(LINK_CONTRAST).await?;
+    harvester.close().await?;
+
+    let links: Vec<_> = snap.labels.iter().filter(|l| l.role == "link").collect();
+    assert_eq!(links.len(), 1, "only the evident link stays labeled: {links:?}");
+    assert_eq!(links[0].name.as_deref(), Some("an evident link"));
+    // The camouflaged link's area lands in ignore via the anchor heuristic.
+    let covered = snap
+        .ignore
+        .iter()
+        .any(|b| b.y > 100.0 && b.y < 160.0 && b.x > 40.0);
+    assert!(covered, "camouflaged link must be ignored, not background: {:?}", snap.ignore);
+    Ok(())
+}

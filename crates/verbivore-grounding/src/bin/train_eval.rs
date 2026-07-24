@@ -30,6 +30,15 @@ fn main() -> anyhow::Result<()> {
     for (role, gt, ap) in acc.per_class() {
         println!("  class {role:16} gt={gt:5} ap={ap:.3}");
     }
+    // Size stratification for the two mass classes: the resolution probe.
+    for class in [1usize, 0] {
+        let role = verbivore_dataset::INTERACTIVE_ROLES[class];
+        for ((lo, hi), gt, ap) in acc.class_by_size(class) {
+            if gt > 0 {
+                println!("  {role:8} h[{lo:>4.0},{hi:>4.0})px gt={gt:5} ap={ap:.3}");
+            }
+        }
+    }
     println!(
         "heldout: mAP@0.5={:.3} matched-IoU={:.3}",
         acc.map50(),

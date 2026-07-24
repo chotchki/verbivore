@@ -186,6 +186,61 @@ async fn occlusion_filter(
         .collect())
 }
 
+/// Splits link labels into visually-EVIDENT (kept) and pointer-only
+/// (demoted). A link styled identically to its parent text — no color shift,
+/// no underline, no weight change, no background — is invisible in a static
+/// screenshot at ANY resolution; its only affordance is cursor:pointer,
+/// which pixels don't carry. Labeling those teaches the detector noise
+/// (measured: 31% of corpus links, 95% on wordpress, link ap 0.012 with the
+/// LARGEST links scoring 0.000 — styling, not resolution, is the wall).
+/// Harvest-only: the executor still resolves any link through the a11y tree.
+pub(crate) async fn demote_invisible_links(
+    page: &Page,
+    labels: Vec<ElementLabel>,
+    dpr: f64,
+) -> Result<(Vec<ElementLabel>, usize)> {
+    let link_centers: Vec<(f64, f64)> = labels
+        .iter()
+        .filter(|l| l.role == "link")
+        // Labels are screenshot px; elementFromPoint wants CSS px.
+        .map(|l| ((l.bbox.x + l.bbox.w / 2.0) / dpr, (l.bbox.y + l.bbox.h / 2.0) / dpr))
+        .collect();
+    if link_centers.is_empty() {
+        return Ok((labels, 0));
+    }
+    let expr = format!(
+        "{}.map(([x, y]) => {{ \
+            let el = document.elementFromPoint(x, y); \
+            if (!el) return true; \
+            el = el.closest('a') || el; \
+            const s = getComputedStyle(el); \
+            const p = el.parentElement ? getComputedStyle(el.parentElement) : s; \
+            return s.color !== p.color \
+                || s.textDecorationLine.includes('underline') \
+                || (parseInt(s.fontWeight) >= 600 && parseInt(p.fontWeight) < 600) \
+                || s.backgroundColor !== p.backgroundColor; \
+         }})",
+        serde_json::to_string(&link_centers)?
+    );
+    let evident: Vec<bool> = page.evaluate(expr).await?.into_value()?;
+    let mut verdicts = evident.into_iter();
+    let mut demoted = 0usize;
+    let kept = labels
+        .into_iter()
+        .filter(|l| {
+            if l.role != "link" {
+                return true;
+            }
+            let keep = verdicts.next().unwrap_or(true);
+            if !keep {
+                demoted += 1;
+            }
+            keep
+        })
+        .collect();
+    Ok((kept, demoted))
+}
+
 fn quad_to_bbox(quad: &[f64]) -> Option<Bbox> {
     if quad.len() < 8 {
         return None;
