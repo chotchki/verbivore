@@ -19,13 +19,9 @@ This PLAN.md is driven by `claude-plan-bridge` (FORMATv2):
   looks wrong.
 -->
 
-## Phase 7 - Corpus v6 (upgraded discovery + design systems)
-
-- [x] 7.1 - Design-system corpus apps, NINE new: bootstrap examples (official zip), USWDS/Materialize/Bulma/Fomantic/Pico kitchen sinks (official markup, pinned npm dists — fomantic picked BECAUSE its div-widgets stress ignore-regions at 0.35 coverage, pico as the native-element control group), W3C ARIA practices (107 example pages of definitionally correct widget labels), dokuwiki (mediawiki's blind-fold twin), css zen garden mirror (20 designs, one HTML — the variation thesis in its purest form, chris's callback). Label check confirms starved classes arriving: combobox/radio/slider/switch across the sinks. Density gate lowered 0.5 -> 0.3: ignore-regions now absorb what the gate used to block
-- [ ] 7.2 - v6 discovery + harvest across all 13 apps with the upgraded crawler (chain probing, saturation, unified identity; page cap raised to 40 per chris — saturation owns stopping now)
-- [ ] 7.3 - Rotation v6 (folds skip apps under 100 samples — a 31-sample heldout measures nothing) + effect-gate retrain with a FRESH threshold (v5's aged one slipped 0.8% past the FA gate)
-
 # Backlog (not yet phased)
+
+- Click-centered pair crops for the effect model — MEASURED MOTIVATION (v6 retrain, 2026-07-24): the widget-rich corpus dropped heldout catch to 0.806 with an oracle ceiling of 0.861 — ~14% of Changed pairs are invisible at any threshold because a 14px checkbox tick is ~3px after the 1280x800 -> 256x160 downscale. The click coordinate is KNOWN at runtime: crop the before/after pair around it and the model gets full resolution exactly where change is expected (whole-page input stays for the no-click/control path)
 
 - Density-gate calibration: revisit the flat 0.5 threshold for grafana-class apps (65 variation skips in v5 — maybe per-app percentile calibration)
 

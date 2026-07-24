@@ -91,3 +91,13 @@ MEASURED MOTIVATION (v4, 2026-07-23): +100 epochs and +18 deep-page samples repl
 - [x] 6.6 - Rotation re-run, 8 folds: mean cross-app mAP 0.059 (was 0.026 on 6 apps) — the diversity lever CONFIRMED, 2.3x from two more apps + cleaner labels. Best folds ghost 0.149, wordpress 0.115. Blind folds name their own fix: mediawiki 0.000 (the only wiki — needs a twin), heimdall 0.000 (31 samples, too small to hold out)
 - [x] 6.7 - Effect-pair harvest on new apps + gate re-validation: diff-stack heldout 0.986/0.058 at frozen threshold on the grown corpus — catch holds, FA slips 0.8% past the 5% gate (oracle 0.986/0.047 passes; retune-after-corpus-growth is the lesson). ssim keeps failing everywhere (0.792/0.128, ceiling 0.764)
 
+---
+
+## 2026-07-24
+
+## Phase 7 - Corpus v6 (upgraded discovery + design systems)
+
+- [x] 7.1 - Design-system corpus apps, NINE new: bootstrap examples (official zip), USWDS/Materialize/Bulma/Fomantic/Pico kitchen sinks (official markup, pinned npm dists — fomantic picked BECAUSE its div-widgets stress ignore-regions at 0.35 coverage, pico as the native-element control group), W3C ARIA practices (107 example pages of definitionally correct widget labels), dokuwiki (mediawiki's blind-fold twin), css zen garden mirror (20 designs, one HTML — the variation thesis in its purest form, chris's callback). Label check confirms starved classes arriving: combobox/radio/slider/switch across the sinks. Density gate lowered 0.5 -> 0.3: ignore-regions now absorb what the gate used to block
+- [x] 7.2 - v6 discovery + harvest across all 17 apps with the upgraded crawler (cap 40, saturation stopping): corpus-v6 = 2783 samples / 32926 labels / 5321 ignore-regions (+48%/+82% over v5). Grafana back in (314 samples, 1159 ignores — the lowered gate + mask working); starved classes real now (combobox 910, checkbox 370, radio 195, slider 69, switch 40; spinbutton still 2)
+- [x] 7.3 - Rotation v6: mean 0.076 (v5 0.059, v3 0.026) — wordpress 0.191, bootstrap 0.148, ghost 0.118, gitea 0.105; dashboards flat ~0.05; mediawiki STILL 0.000 (all classes, even 1168 buttons — out-of-family pages collapse the ranking wholesale). PER-CLASS is the real story: on the wordpress fold button ap=0.400 and textbox ap=0.270 (controls ARE learning cross-app, the rebalance paid) but link ap=0.012 — and links are 63% of label mass, capping every aggregate. Effect retrain: FA fixed (0.047) but catch fell to 0.806, oracle 0.861 — tiny-widget changes are sub-resolution (click-centered crops backlogged with the numbers)
+
