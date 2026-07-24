@@ -133,6 +133,24 @@ impl EvalAccumulator {
         }
         self.matched_iou_sum / self.matched as f64
     }
+
+    /// (role, ground-truth count, AP) per class present in the ground truth.
+    /// The aggregate mAP is link/button-dominated by mass; a starved-class
+    /// breakthrough (or collapse) is invisible without this view.
+    pub fn per_class(&self) -> Vec<(&'static str, usize, f64)> {
+        self.classes
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.ground_truth > 0)
+            .map(|(i, c)| {
+                (
+                    verbivore_dataset::INTERACTIVE_ROLES[i],
+                    c.ground_truth,
+                    average_precision(c),
+                )
+            })
+            .collect()
+    }
 }
 
 /// All-point interpolated AP (area under the precision envelope).

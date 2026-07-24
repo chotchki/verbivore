@@ -27,6 +27,9 @@ fn main() -> anyhow::Result<()> {
 
     let heldout = GroundingDataset::open(&heldout_dir)?;
     let acc = evaluate_model(&model, &heldout, &device);
+    for (role, gt, ap) in acc.per_class() {
+        println!("  class {role:16} gt={gt:5} ap={ap:.3}");
+    }
     println!(
         "heldout: mAP@0.5={:.3} matched-IoU={:.3}",
         acc.map50(),
