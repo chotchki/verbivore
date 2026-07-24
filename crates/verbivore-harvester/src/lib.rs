@@ -97,9 +97,12 @@ pub struct SweepOutcome {
     pub low_density: usize,
 }
 
-/// Below this label coverage a page teaches more blindness than detection —
-/// its unlabeled interactive surface overwhelms the ignore-region budget.
-pub const MIN_LABEL_COVERAGE: f64 = 0.5;
+/// Below this label coverage a page's a11y slice is too thin to trust even
+/// with masking. Lowered from 0.5 once ignore-regions landed: the mask
+/// absorbs unlabeled interactive surface from the loss, so div-widget
+/// frameworks (fomantic 0.35, materialize 0.47, grafana 0.33-0.48) train on
+/// their LABELED half instead of being excluded outright.
+pub const MIN_LABEL_COVERAGE: f64 = 0.3;
 
 /// One captured page: the raw inputs every downstream stage feeds on.
 #[derive(Debug)]

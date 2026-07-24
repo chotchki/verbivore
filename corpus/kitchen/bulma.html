@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<!-- Bulma kitchen sink: css-only framework, official component markup. -->
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fleet manager — Bulma kitchen sink</title>
+<link rel="stylesheet" href="/bulma/bulma.min.css">
+</head>
+<body>
+<nav class="navbar is-primary" role="navigation" aria-label="main navigation">
+  <div class="navbar-brand"><a class="navbar-item" href="/">Fleet</a></div>
+  <div class="navbar-menu">
+    <div class="navbar-start">
+      <a class="navbar-item" href="#vehicles">Vehicles</a>
+      <a class="navbar-item" href="#routes">Routes</a>
+      <a class="navbar-item" href="#reports">Reports</a>
+    </div>
+  </div>
+</nav>
+<section class="section" id="vehicles">
+  <h1 class="title">Add a vehicle</h1>
+  <form aria-label="Add vehicle">
+    <div class="field">
+      <label class="label" for="plate">License plate</label>
+      <div class="control"><input class="input" id="plate" type="text" placeholder="ABC-1234"></div>
+    </div>
+    <div class="field">
+      <label class="label" for="vclass">Class</label>
+      <div class="control">
+        <div class="select"><select id="vclass">
+          <option>Van</option><option>Box truck</option><option>Semi</option>
+        </select></div>
+      </div>
+    </div>
+    <div class="field">
+      <label class="label" for="notes">Notes</label>
+      <div class="control"><textarea class="textarea" id="notes" rows="3"></textarea></div>
+    </div>
+    <div class="field">
+      <div class="control">
+        <label class="checkbox"><input type="checkbox" checked> Refrigerated</label>
+        <label class="checkbox"><input type="checkbox"> Liftgate</label>
+      </div>
+    </div>
+    <div class="field">
+      <div class="control">
+        <label class="radio"><input type="radio" name="fuel" checked> Diesel</label>
+        <label class="radio"><input type="radio" name="fuel"> Electric</label>
+      </div>
+    </div>
+    <div class="field is-grouped">
+      <div class="control"><button class="button is-link" type="submit">Save vehicle</button></div>
+      <div class="control"><button class="button is-link is-light" type="button">Cancel</button></div>
+    </div>
+  </form>
+</section>
+<section class="section" id="routes">
+  <div class="tabs"><ul>
+    <li class="is-active"><a>Active</a></li><li><a>Planned</a></li><li><a>Archived</a></li>
+  </ul></div>
+  <table class="table is-striped">
+    <thead><tr><th>Route</th><th>Driver</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>North loop</td><td>Kim</td><td><span class="tag is-success">On time</span></td></tr>
+      <tr><td>Harbor run</td><td>Ade</td><td><span class="tag is-warning">Delayed</span></td></tr>
+    </tbody>
+  </table>
+  <nav class="pagination" role="navigation" aria-label="pagination">
+    <a class="pagination-previous" href="#routes">Previous</a>
+    <a class="pagination-next" href="#routes">Next</a>
+  </nav>
+</section>
+</body>
+</html>

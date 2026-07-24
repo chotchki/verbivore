@@ -107,6 +107,77 @@ services:
     volumes:
       - heimdall_data:/config
 
+  # Design-system kitchen sinks: static, nginx-served, assets vendored by
+  # seed.sh at pinned versions (vendor/ is gitignored — the pins are the
+  # source of truth, the bytes are reproducible downloads).
+  bootstrap-examples:
+    image: nginx:1.27-alpine
+    ports:
+      - "42009:80"
+    volumes:
+      - ./vendor/bootstrap-examples:/usr/share/nginx/html:ro
+
+  uswds-kitchen:
+    image: nginx:1.27-alpine
+    ports:
+      - "42010:80"
+    volumes:
+      - ./kitchen/uswds.html:/usr/share/nginx/html/index.html:ro
+      - ./vendor/uswds:/usr/share/nginx/html/uswds:ro
+
+  aria-practices:
+    image: nginx:1.27-alpine
+    ports:
+      - "42011:80"
+    volumes:
+      - ./vendor/aria-practices:/usr/share/nginx/html:ro
+
+  materialize-kitchen:
+    image: nginx:1.27-alpine
+    ports:
+      - "42012:80"
+    volumes:
+      - ./kitchen/materialize.html:/usr/share/nginx/html/index.html:ro
+      - ./vendor/materialize:/usr/share/nginx/html/materialize:ro
+
+  bulma-kitchen:
+    image: nginx:1.27-alpine
+    ports:
+      - "42014:80"
+    volumes:
+      - ./kitchen/bulma.html:/usr/share/nginx/html/index.html:ro
+      - ./vendor/bulma:/usr/share/nginx/html/bulma:ro
+
+  fomantic-kitchen:
+    image: nginx:1.27-alpine
+    ports:
+      - "42015:80"
+    volumes:
+      - ./kitchen/fomantic.html:/usr/share/nginx/html/index.html:ro
+      - ./vendor/fomantic:/usr/share/nginx/html/fomantic:ro
+
+  pico-kitchen:
+    image: nginx:1.27-alpine
+    ports:
+      - "42016:80"
+    volumes:
+      - ./kitchen/pico.html:/usr/share/nginx/html/index.html:ro
+      - ./vendor/pico:/usr/share/nginx/html/pico:ro
+
+  zengarden:
+    image: nginx:1.27-alpine
+    ports:
+      - "42017:80"
+    volumes:
+      - ./vendor/zengarden:/usr/share/nginx/html:ro
+
+  dokuwiki:
+    image: lscr.io/linuxserver/dokuwiki:2026-07-14a-ls316
+    ports:
+      - "42013:80"
+    volumes:
+      - dokuwiki_data:/config
+
 volumes:
   wp_html:
   mw_data:
@@ -114,3 +185,4 @@ volumes:
   mb_data:
   ghost_data:
   heimdall_data:
+  dokuwiki_data:

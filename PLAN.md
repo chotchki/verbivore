@@ -19,9 +19,15 @@ This PLAN.md is driven by `claude-plan-bridge` (FORMATv2):
   looks wrong.
 -->
 
+## Phase 7 - Corpus v6 (upgraded discovery + design systems)
+
+- [x] 7.1 - Design-system corpus apps, NINE new: bootstrap examples (official zip), USWDS/Materialize/Bulma/Fomantic/Pico kitchen sinks (official markup, pinned npm dists — fomantic picked BECAUSE its div-widgets stress ignore-regions at 0.35 coverage, pico as the native-element control group), W3C ARIA practices (107 example pages of definitionally correct widget labels), dokuwiki (mediawiki's blind-fold twin), css zen garden mirror (20 designs, one HTML — the variation thesis in its purest form, chris's callback). Label check confirms starved classes arriving: combobox/radio/slider/switch across the sinks. Density gate lowered 0.5 -> 0.3: ignore-regions now absorb what the gate used to block
+- [ ] 7.2 - v6 discovery + harvest across all 13 apps with the upgraded crawler (chain probing, saturation, unified identity; page cap raised to 40 per chris — saturation owns stopping now)
+- [ ] 7.3 - Rotation v6 (folds skip apps under 100 samples — a 31-sample heldout measures nothing) + effect-gate retrain with a FRESH threshold (v5's aged one slipped 0.8% past the FA gate)
+
 # Backlog (not yet phased)
 
-- Corpus v6 round: re-harvest with the upgraded discovery (chain probing + saturation landed AFTER v5's url lists were built), add a second wiki (dokuwiki?) to fix the mediawiki blind fold, feed heimdall-class small apps more pages or accept they can't be held out, revisit the 0.5 density threshold for grafana-class apps (65 variation skips — maybe per-app calibration), and retrain the effect gate threshold on the grown pair corpus (frozen-t FA 5.8% vs 5% gate; oracle passes, the threshold just aged)
+- Density-gate calibration: revisit the flat 0.5 threshold for grafana-class apps (65 variation skips in v5 — maybe per-app percentile calibration)
 
 - ~~SPA frontier discovery~~ DONE same day (chris's DOM-chain design): navigation targets keyed by root-to-target chain tokens (structure + text fragments — text separates same-menu siblings whose chains are structurally identical), farthest-first probing on fresh loads, landed urls join the normal guarded frontier; plus settle_render fixing the render race (grafana: 0 anchors at load, 32 after mount). Grafana: 1 page -> 14, saturation-stopped. Probe triggers only on href-dry pages (<3 admitted)
 

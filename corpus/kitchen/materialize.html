@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<!-- Materialize kitchen sink: community Material Design implementation (NOT
+     Google's MUI — that has no turnkey local install). Official Materialize
+     component markup, M.AutoInit wires selects/datepickers/tabs/etc. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project console — Material kitchen sink</title>
+<link rel="stylesheet" href="/materialize/css/materialize.min.css">
+</head>
+<body>
+<nav role="navigation">
+  <div class="nav-wrapper container">
+    <a href="/" class="brand-logo">Console</a>
+    <ul class="right hide-on-med-and-down">
+      <li><a href="#settings">Settings</a></li>
+      <li><a href="#team">Team</a></li>
+      <li><a href="#billing">Billing</a></li>
+    </ul>
+  </div>
+</nav>
+<main class="container">
+  <h4>Project settings</h4>
+  <div class="row" id="settings">
+    <form class="col s12" aria-label="Project settings">
+      <div class="row">
+        <div class="input-field col s6">
+          <input id="project" type="text" value="verbivore">
+          <label for="project" class="active">Project name</label>
+        </div>
+        <div class="input-field col s6">
+          <select id="region" aria-label="Region">
+            <option value="" disabled selected>Choose region</option>
+            <option value="us-west">us-west</option>
+            <option value="us-east">us-east</option>
+            <option value="eu-central">eu-central</option>
+          </select>
+          <label>Region</label>
+        </div>
+      </div>
+      <div class="row">
+        <div class="input-field col s6">
+          <input id="launch-date" type="text" class="datepicker">
+          <label for="launch-date">Launch date</label>
+        </div>
+        <div class="input-field col s6">
+          <input id="standup" type="text" class="timepicker">
+          <label for="standup">Daily standup</label>
+        </div>
+      </div>
+      <div class="row">
+        <div class="col s6">
+          <label>
+            <input type="checkbox" class="filled-in" checked>
+            <span>Enable alerts</span>
+          </label>
+          <p><label>
+            <input type="checkbox">
+            <span>Public dashboard</span>
+          </label></p>
+        </div>
+        <div class="col s6">
+          <div class="switch">
+            <label>Off<input type="checkbox"><span class="lever"></span>On</label>
+          </div>
+          <p class="range-field">
+            <input type="range" id="replicas" min="1" max="12" value="3">
+          </p>
+        </div>
+      </div>
+      <div class="row">
+        <div class="col s6">
+          <p><label>
+            <input name="tier" type="radio" checked>
+            <span>Standard tier</span>
+          </label></p>
+          <p><label>
+            <input name="tier" type="radio">
+            <span>Premium tier</span>
+          </label></p>
+        </div>
+        <div class="col s6">
+          <div class="chips chips-initial" aria-label="Tags"></div>
+        </div>
+      </div>
+      <button class="btn waves-effect" type="submit">Save</button>
+      <a class="btn-flat" href="#!">Discard</a>
+    </form>
+  </div>
+
+  <div class="row" id="team">
+    <div class="col s12">
+      <ul class="tabs">
+        <li class="tab col s3"><a class="active" href="#members">Members</a></li>
+        <li class="tab col s3"><a href="#invites">Invites</a></li>
+        <li class="tab col s3"><a href="#roles">Roles</a></li>
+      </ul>
+    </div>
+    <div id="members" class="col s12"><p>Three members active.</p></div>
+    <div id="invites" class="col s12"><p>No pending invites.</p></div>
+    <div id="roles" class="col s12"><p>Admin, editor, viewer.</p></div>
+  </div>
+
+  <ul class="collapsible" id="billing">
+    <li>
+      <div class="collapsible-header">Current plan</div>
+      <div class="collapsible-body"><span>Standard, billed monthly.</span></div>
+    </li>
+    <li>
+      <div class="collapsible-header">Invoices</div>
+      <div class="collapsible-body"><span>Twelve invoices on file.</span></div>
+    </li>
+  </ul>
+</main>
+<script src="/materialize/js/materialize.min.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    M.AutoInit();
+    M.Chips.init(document.querySelector('.chips-initial'), {
+      data: [{ tag: 'rust' }, { tag: 'ml' }, { tag: 'browser' }]
+    });
+  });
+</script>
+</body>
+</html>

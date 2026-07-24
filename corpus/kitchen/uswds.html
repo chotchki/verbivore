@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<!-- USWDS kitchen sink: official component markup, dense in the widget
+     classes the corpus is starved for (combo box, date picker, character
+     count, radios, checkboxes, range). Markup follows designsystem.digital.gov
+     component docs; uswds.min.js auto-initializes on load. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Benefits application — USWDS kitchen sink</title>
+<link rel="stylesheet" href="/uswds/css/uswds.min.css">
+</head>
+<body>
+<a class="usa-skipnav" href="#main-content">Skip to main content</a>
+<header class="usa-header usa-header--basic" role="banner">
+  <div class="usa-nav-container">
+    <div class="usa-navbar">
+      <div class="usa-logo"><em class="usa-logo__text"><a href="/" title="Home">Corpus Benefits Agency</a></em></div>
+      <button type="button" class="usa-menu-btn">Menu</button>
+    </div>
+    <nav aria-label="Primary navigation" class="usa-nav">
+      <ul class="usa-nav__primary usa-accordion">
+        <li class="usa-nav__primary-item"><a href="#main-content" class="usa-nav-link"><span>Apply</span></a></li>
+        <li class="usa-nav__primary-item"><a href="#eligibility" class="usa-nav-link"><span>Eligibility</span></a></li>
+        <li class="usa-nav__primary-item"><a href="#contact" class="usa-nav-link"><span>Contact</span></a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+<main id="main-content" class="grid-container usa-section">
+  <h1>Apply for benefits</h1>
+  <form class="usa-form usa-form--large" aria-label="Benefits application">
+    <fieldset class="usa-fieldset">
+      <legend class="usa-legend usa-legend--large">Your details</legend>
+      <label class="usa-label" for="full-name">Full name</label>
+      <input class="usa-input" id="full-name" name="full-name" type="text">
+
+      <label class="usa-label" for="bio">Tell us about your situation</label>
+      <div class="usa-character-count">
+        <textarea class="usa-textarea usa-character-count__field" id="bio" maxlength="200" name="bio" rows="4"></textarea>
+        <span class="usa-character-count__message">You can enter up to 200 characters</span>
+      </div>
+
+      <label class="usa-label" for="state">State (combo box)</label>
+      <div class="usa-combo-box">
+        <select class="usa-select" name="state" id="state">
+          <option value="">Select a state</option>
+          <option value="WA">Washington</option>
+          <option value="OR">Oregon</option>
+          <option value="ID">Idaho</option>
+          <option value="MT">Montana</option>
+        </select>
+      </div>
+
+      <label class="usa-label" id="appointment-date-label" for="appointment-date">Appointment date</label>
+      <div class="usa-date-picker">
+        <input class="usa-input" id="appointment-date" name="appointment-date" aria-labelledby="appointment-date-label">
+      </div>
+    </fieldset>
+
+    <fieldset class="usa-fieldset" id="eligibility">
+      <legend class="usa-legend">Household</legend>
+      <div class="usa-radio">
+        <input class="usa-radio__input" id="single" type="radio" name="household" value="single" checked>
+        <label class="usa-radio__label" for="single">Single</label>
+      </div>
+      <div class="usa-radio">
+        <input class="usa-radio__input" id="family" type="radio" name="household" value="family">
+        <label class="usa-radio__label" for="family">Family</label>
+      </div>
+
+      <div class="usa-checkbox">
+        <input class="usa-checkbox__input" id="veteran" type="checkbox" name="flags" value="veteran">
+        <label class="usa-checkbox__label" for="veteran">I am a veteran</label>
+      </div>
+      <div class="usa-checkbox">
+        <input class="usa-checkbox__input" id="disabled" type="checkbox" name="flags" value="disability">
+        <label class="usa-checkbox__label" for="disabled">I have a disability</label>
+      </div>
+
+      <label class="usa-label" for="dependents">Number of dependents</label>
+      <input class="usa-input usa-input--sm" id="dependents" name="dependents" type="number" min="0" max="12" value="0">
+
+      <label class="usa-label" for="income-range">Approximate income</label>
+      <input class="usa-range" id="income-range" type="range" min="0" max="200000" step="5000" value="40000"
+        aria-valuetext="40000 dollars">
+    </fieldset>
+
+    <button class="usa-button" type="submit">Submit application</button>
+    <button class="usa-button usa-button--outline" type="button">Save draft</button>
+  </form>
+
+  <section class="usa-accordion usa-accordion--bordered margin-top-4" id="contact">
+    <h2 class="usa-accordion__heading">
+      <button type="button" class="usa-accordion__button" aria-expanded="false" aria-controls="a1">Contact options</button>
+    </h2>
+    <div id="a1" class="usa-accordion__content usa-prose" hidden>
+      <p>Call us or visit a field office. Processing takes 5 business days.</p>
+    </div>
+  </section>
+</main>
+<script src="/uswds/js/uswds.min.js"></script>
+</body>
+</html>

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<!-- Pico.css kitchen sink: CLASSLESS framework styling native elements — the
+     control group. Every widget is a real input/select/details, so the a11y
+     labels are perfect by construction. -->
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Garden log — Pico kitchen sink</title>
+<link rel="stylesheet" href="/pico/pico.min.css">
+</head>
+<body>
+<header class="container">
+  <nav>
+    <ul><li><strong>Garden log</strong></li></ul>
+    <ul>
+      <li><a href="#plantings">Plantings</a></li>
+      <li><a href="#harvest">Harvest</a></li>
+      <li><a href="#about">About</a></li>
+    </ul>
+  </nav>
+</header>
+<main class="container">
+  <section id="plantings">
+    <h1>Log a planting</h1>
+    <form aria-label="Log planting">
+      <label for="crop">Crop</label>
+      <input type="text" id="crop" name="crop" placeholder="Tomato">
+      <label for="variety">Variety</label>
+      <select id="variety" name="variety">
+        <option>Cherry</option><option>Roma</option><option>Beefsteak</option>
+      </select>
+      <label for="planted">Planted on</label>
+      <input type="date" id="planted" name="planted">
+      <label for="beds">Bed count: <output>2</output></label>
+      <input type="range" id="beds" name="beds" min="1" max="8" value="2">
+      <fieldset>
+        <legend>Watering</legend>
+        <label><input type="radio" name="water" checked> Drip</label>
+        <label><input type="radio" name="water"> Manual</label>
+      </fieldset>
+      <fieldset>
+        <label><input type="checkbox" role="switch" checked> Row cover</label>
+        <label><input type="checkbox" role="switch"> Greenhouse start</label>
+      </fieldset>
+      <button type="submit">Save planting</button>
+    </form>
+  </section>
+  <section id="harvest">
+    <h2>This week</h2>
+    <details>
+      <summary>Harvest notes</summary>
+      <p>Four pounds of snap peas, first zucchini.</p>
+    </details>
+    <progress value="60" max="100">60%</progress>
+  </section>
+  <footer id="about"><small>A seeded corpus page.</small></footer>
+</main>
+</body>
+</html>

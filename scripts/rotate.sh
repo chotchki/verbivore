@@ -12,6 +12,12 @@ SUMMARY="$WORK/rotation-summary.txt"
 
 for HELD in "$ROOT"/*/; do
     APP=$(basename "$HELD")
+    # Tiny apps stay in every TRAINING merge but measure nothing as folds.
+    N=$(ls "$HELD/samples" 2>/dev/null | grep -c '\.json$' || echo 0)
+    if [ "$N" -lt 100 ]; then
+        echo "$APP: only $N samples, skipping as heldout fold" | tee -a "$SUMMARY"
+        continue
+    fi
     TRAIN="$WORK/train-minus-$APP"
     rm -rf "$TRAIN"
     OTHERS=$(ls -d "$ROOT"/*/ | grep -v "/$APP/\$")
