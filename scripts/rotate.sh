@@ -24,8 +24,12 @@ for HELD in "$ROOT"/*/; do
     # shellcheck disable=SC2086 — word-splitting the dir list is the point
     cargo run --release -q -p verbivore -- dataset-merge "$TRAIN" $OTHERS >/dev/null
     echo "=== fold: heldout=$APP ==="
-    OUT=$(cargo run --release -q -p verbivore-grounding --bin train-eval -- "$TRAIN" "$HELD" "$EPOCHS" | tail -1)
-    echo "$APP: $OUT" | tee -a "$SUMMARY"
+    # Full output (per-class + size-stratified AP) survives in the fold log;
+    # the summary keeps only the last line. Losing the per-class detail cost
+    # a full re-train pass in v7 — don't slim this back down.
+    cargo run --release -q -p verbivore-grounding --bin train-eval -- "$TRAIN" "$HELD" "$EPOCHS" \
+        > "$WORK/fold-$APP.log"
+    echo "$APP: $(tail -1 "$WORK/fold-$APP.log")" | tee -a "$SUMMARY"
 done
 
 echo "--- rotation complete ---"
