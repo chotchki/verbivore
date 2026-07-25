@@ -19,18 +19,11 @@ This PLAN.md is driven by `claude-plan-bridge` (FORMATv2):
   looks wrong.
 -->
 
-## Phase 8 - Link honesty (chris's contrast/pointer hypothesis)
-
-- [x] 8.1 - Diagnose the link wall: size-stratified AP (buttons climb 0.297->0.462 with size = resolution-bound; links score 0.000 at the LARGEST sizes = styling-bound) + invisible-link rate (31% corpus-wide, 95% wordpress, 6% mediawiki — maps directly onto fold results). Verdict: pointer-only links are unlearnable pixels; resolution is the CONTROLS' constraint, not the links'
-- [x] 8.2 - Labeler demotion: links styled identically to their parent text leave the harvest labels BEFORE the heuristic scan (whose a[href] rule sweeps them into ignore-regions). Harvest-only — the executor still resolves any link via a11y. Browser test pins both directions
-- [x] 8.3 - Re-harvest v7 + rotation: measure link AP on the honest (evident-only) subset and the aggregate shift
-- [ ] 8.4 - Density gate vs link demotion: demoted-to-ignore area should count as accounted-for, not missing (wordpress 125 to 52 samples)
-
 # Backlog (not yet phased)
 
 - Click-centered pair crops for the effect model — MEASURED MOTIVATION (v6 retrain, 2026-07-24): the widget-rich corpus dropped heldout catch to 0.806 with an oracle ceiling of 0.861 — ~14% of Changed pairs are invisible at any threshold because a 14px checkbox tick is ~3px after the 1280x800 -> 256x160 downscale. The click coordinate is KNOWN at runtime: crop the before/after pair around it and the model gets full resolution exactly where change is expected (whole-page input stays for the no-click/control path)
 
-- Density-gate calibration: revisit the flat 0.5 threshold for grafana-class apps (65 variation skips in v5 — maybe per-app percentile calibration)
+- Density-gate calibration: revisit the flat threshold (0.3 since 7.1, and 8.4 made demoted links count as covered — remaining skips are genuinely-unlabeled custom widgets, grafana-class; maybe per-app percentile calibration)
 
 - ~~SPA frontier discovery~~ DONE same day (chris's DOM-chain design): navigation targets keyed by root-to-target chain tokens (structure + text fragments — text separates same-menu siblings whose chains are structurally identical), farthest-first probing on fresh loads, landed urls join the normal guarded frontier; plus settle_render fixing the render race (grafana: 0 anchors at load, 32 after mount). Grafana: 1 page -> 14, saturation-stopped. Probe triggers only on href-dry pages (<3 admitted)
 

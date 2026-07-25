@@ -101,3 +101,14 @@ MEASURED MOTIVATION (v4, 2026-07-23): +100 epochs and +18 deep-page samples repl
 - [x] 7.2 - v6 discovery + harvest across all 17 apps with the upgraded crawler (cap 40, saturation stopping): corpus-v6 = 2783 samples / 32926 labels / 5321 ignore-regions (+48%/+82% over v5). Grafana back in (314 samples, 1159 ignores — the lowered gate + mask working); starved classes real now (combobox 910, checkbox 370, radio 195, slider 69, switch 40; spinbutton still 2)
 - [x] 7.3 - Rotation v6: mean 0.076 (v5 0.059, v3 0.026) — wordpress 0.191, bootstrap 0.148, ghost 0.118, gitea 0.105; dashboards flat ~0.05; mediawiki STILL 0.000 (all classes, even 1168 buttons — out-of-family pages collapse the ranking wholesale). PER-CLASS is the real story: on the wordpress fold button ap=0.400 and textbox ap=0.270 (controls ARE learning cross-app, the rebalance paid) but link ap=0.012 — and links are 63% of label mass, capping every aggregate. Effect retrain: FA fixed (0.047) but catch fell to 0.806, oracle 0.861 — tiny-widget changes are sub-resolution (click-centered crops backlogged with the numbers)
 
+---
+
+## 2026-07-25
+
+## Phase 8 - Link honesty (chris's contrast/pointer hypothesis)
+
+- [x] 8.1 - Diagnose the link wall: size-stratified AP (buttons climb 0.297->0.462 with size = resolution-bound; links score 0.000 at the LARGEST sizes = styling-bound) + invisible-link rate (31% corpus-wide, 95% wordpress, 6% mediawiki — maps directly onto fold results). Verdict: pointer-only links are unlearnable pixels; resolution is the CONTROLS' constraint, not the links'
+- [x] 8.2 - Labeler demotion: links styled identically to their parent text leave the harvest labels BEFORE the heuristic scan (whose a[href] rule sweeps them into ignore-regions). Harvest-only — the executor still resolves any link via a11y. Browser test pins both directions
+- [x] 8.3 - Re-harvest v7 + rotation: honest labels moved the collapsed folds — mediawiki 0.000 -> 0.153 (link ap 0.243; the 8-12px stratum hits 0.473 = classic styled links DO transfer, and big links score worst, killing the resolution theory for links), wordpress evident-only link ap 0.012 -> 0.062 with button 0.400 -> 0.764; matched-8-fold mean 0.062 -> 0.068. Gitea 0.105 -> 0.031 decomposes as class-mix (searchbox/checkbox/combobox near-zero and newly present in gt; link held 0.108), not links. rotate.sh now keeps per-fold logs — losing the per-class lines cost a 3-fold retrain to recover
+- [x] 8.4 - Density gate vs link demotion: demoted area counts as ACCOUNTED-FOR (known-and-masked, not missing a11y) and demoted bboxes go straight to ignore instead of relying on the a[href] scan rule. The v7 log showed every wordpress front-page variation skipped at 0% coverage — the gate punishing honesty. Fix recovers wordpress 52 -> 127 samples (v6: 125), link labels 88 -> 104 evident-only. Link-farm browser test pins clear-the-gate; genuinely-unlabeled div soup still fails
+
