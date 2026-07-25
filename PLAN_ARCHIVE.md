@@ -112,3 +112,11 @@ MEASURED MOTIVATION (v4, 2026-07-23): +100 epochs and +18 deep-page samples repl
 - [x] 8.3 - Re-harvest v7 + rotation: honest labels moved the collapsed folds — mediawiki 0.000 -> 0.153 (link ap 0.243; the 8-12px stratum hits 0.473 = classic styled links DO transfer, and big links score worst, killing the resolution theory for links), wordpress evident-only link ap 0.012 -> 0.062 with button 0.400 -> 0.764; matched-8-fold mean 0.062 -> 0.068. Gitea 0.105 -> 0.031 decomposes as class-mix (searchbox/checkbox/combobox near-zero and newly present in gt; link held 0.108), not links. rotate.sh now keeps per-fold logs — losing the per-class lines cost a 3-fold retrain to recover
 - [x] 8.4 - Density gate vs link demotion: demoted area counts as ACCOUNTED-FOR (known-and-masked, not missing a11y) and demoted bboxes go straight to ignore instead of relying on the a[href] scan rule. The v7 log showed every wordpress front-page variation skipped at 0% coverage — the gate punishing honesty. Fix recovers wordpress 52 -> 127 samples (v6: 125), link labels 88 -> 104 evident-only. Link-farm browser test pins clear-the-gate; genuinely-unlabeled div soup still fails
 
+---
+
+## 2026-07-25
+
+## Phase 9 - Corpus v8 (post-density-gate honesty)
+- [x] 9.1 - v8 re-harvest through the 8.4 gate: wordpress 52 -> 128 CROSSED the fold floor (fold restored), metabase 56 -> 86 (halfway), dokuwiki 62 -> 63 and zengarden 82 -> 83 unmoved — those two are URL-starved not gate-starved (their evident links already passed; the fix is deeper discovery, backlogged). Corpus 2803 samples
+- [x] 9.2 - Rotation v8, 9 folds, mean 0.087 (best yet; v6 0.076 was inflated by dishonest wordpress labels): wordpress back at 0.283 (button 0.652), bootstrap 0.172 (link 0.264), gitea recovered 0.089 (link 0.180, 12-20px stratum 0.380), superset link 0.198 with 8-12px at 0.691 — classically-styled link strata are now solidly learnable corpus-wide. CAUTION FLAG: mediawiki swung 0.000 -> 0.243 -> 0.083 across three near-identical trainings; single-run fold deltas at ±0.08 are a noisy instrument — variance replication backlogged before crediting future levers
+
