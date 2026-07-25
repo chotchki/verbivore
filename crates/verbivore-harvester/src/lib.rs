@@ -286,12 +286,17 @@ impl Harvester {
         let ax = page.execute(GetFullAxTreeParams::default()).await?;
         let labels =
             labels::extract(&page, &ax.result.nodes, vw as f64, vh as f64, variation.dpr).await?;
-        // Harvest-only demotion: pointer-only links leave the labels BEFORE
-        // the heuristic scan, whose a[href] rule then sweeps their area into
-        // ignore-regions. Runtime resolution (labels_on) is untouched.
-        let (labels, _demoted) =
+        // Harvest-only demotion: pointer-only links leave the labels, their
+        // area goes straight to ignore, and — 8.4 — they count as COVERED for
+        // the density gate. Demoted area is known-and-masked, not missing
+        // a11y; counting it as missing rejected WordPress's 95%-pointer-only
+        // pages wholesale (125 -> 52 samples in v7). Runtime resolution
+        // (labels_on) is untouched.
+        let (labels, demoted) =
             labels::demote_invisible_links(&page, labels, variation.dpr).await?;
-        let scan = heuristics::scan(&page, &labels, variation.dpr).await?;
+        let mut covering = labels.clone();
+        covering.extend(demoted.iter().cloned());
+        let scan = heuristics::scan(&page, &covering, variation.dpr).await?;
         let ax_nodes = ax
             .result
             .nodes
@@ -303,13 +308,16 @@ impl Harvester {
             })
             .collect();
         page.close().await?;
+        let label_coverage = scan.coverage();
+        let mut ignore = scan.uncovered;
+        ignore.extend(demoted.into_iter().map(|l| l.bbox));
         Ok(PageSnapshot {
             screenshot_png,
             html,
             ax_nodes,
             labels,
-            label_coverage: scan.coverage(),
-            ignore: scan.uncovered,
+            label_coverage,
+            ignore,
         })
     }
 

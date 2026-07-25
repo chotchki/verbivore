@@ -194,11 +194,14 @@ async fn occlusion_filter(
 /// (measured: 31% of corpus links, 95% on wordpress, link ap 0.012 with the
 /// LARGEST links scoring 0.000 — styling, not resolution, is the wall).
 /// Harvest-only: the executor still resolves any link through the a11y tree.
+/// Returns (kept, demoted) — demoted labels are known-and-masked, not
+/// missing: the caller counts them as covered for the density gate and
+/// routes their area into ignore-regions itself.
 pub(crate) async fn demote_invisible_links(
     page: &Page,
     labels: Vec<ElementLabel>,
     dpr: f64,
-) -> Result<(Vec<ElementLabel>, usize)> {
+) -> Result<(Vec<ElementLabel>, Vec<ElementLabel>)> {
     let link_centers: Vec<(f64, f64)> = labels
         .iter()
         .filter(|l| l.role == "link")
@@ -206,7 +209,7 @@ pub(crate) async fn demote_invisible_links(
         .map(|l| ((l.bbox.x + l.bbox.w / 2.0) / dpr, (l.bbox.y + l.bbox.h / 2.0) / dpr))
         .collect();
     if link_centers.is_empty() {
-        return Ok((labels, 0));
+        return Ok((labels, Vec::new()));
     }
     let expr = format!(
         "{}.map(([x, y]) => {{ \
@@ -224,20 +227,14 @@ pub(crate) async fn demote_invisible_links(
     );
     let evident: Vec<bool> = page.evaluate(expr).await?.into_value()?;
     let mut verdicts = evident.into_iter();
-    let mut demoted = 0usize;
-    let kept = labels
-        .into_iter()
-        .filter(|l| {
-            if l.role != "link" {
-                return true;
-            }
-            let keep = verdicts.next().unwrap_or(true);
-            if !keep {
-                demoted += 1;
-            }
-            keep
-        })
-        .collect();
+    let (mut kept, mut demoted) = (Vec::new(), Vec::new());
+    for l in labels {
+        if l.role == "link" && !verdicts.next().unwrap_or(true) {
+            demoted.push(l);
+        } else {
+            kept.push(l);
+        }
+    }
     Ok((kept, demoted))
 }
 
