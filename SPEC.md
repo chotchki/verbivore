@@ -39,6 +39,22 @@ This touches the full lifecycle the project exists to teach: dataset design, aug
 
 The unlimited-data property also changes WHICH models are viable. Pretrained backbones matter most when labeled data is scarce and the visual domain is wide (natural images). Ours is the opposite: auto-labeled data at whatever scale we ask for, in a NARROW domain (flat design, axis-aligned rectangles, rendered text — UI screenshots are an easy neighborhood by detection standards). Training from scratch is a real option here, not a purist handicap.
 
+## Affordance fusion — the DOM rides along as INPUT, not just labeler
+
+The detector's original contract was pixels-only, which quietly forced it to re-derive from pixels information the runtime demonstrably has — we drive the browser at inference, EVERY time, so DOM-derived evidence is available wherever the model runs. The fix is sensor fusion: the input becomes screenshot + rasterized AFFORDANCE PLANES, one per action modality the executor actually speaks (pointer, keyboard/text, drag-scroll). The channels mirror the ACTION SPACE, not the DOM's event taxonomy, because a verb step is action + target and the model should speak the executor's vocabulary. Phase 8 measured why this matters: pointer-only links are 31% of corpus links and unlearnable from pixels at any resolution — the affordance was never in the input. Change the input, not the ambition.
+
+One encoding rule covers everything: a signal's heat is its evidence weight divided by its SPECIFICITY. A click listener on a 40px button burns bright and small; the same listener on `document` (React delegation, a global keyboard-shortcut handler) glows faint and everywhere; a canvas contributes one uniform maybe-blob over its surface. Delegation, global handlers and canvas stop being special cases — they're all just low-specificity evidence, and a model trained across the sharpness spectrum learns that a flat prior means trust the pixels.
+
+The named risk that shapes the whole design: SHORTCUT LEARNING. A sharp prior derived from the label source teaches the model to copy heatmap → boxes, score brilliantly on DOM pages and collapse on canvas — the one surface the detector exists for. Three mitigations, all mandatory:
+
+- **Prior and labels come from different sensors.** Labels stay a11y-derived; the prior comes from the heuristic scan + CDP listener geometry (`DOMDebugger.getEventListeners`), never the a11y tree. Their disagreement (grafana: 0–48% coverage) is a feature — it's where the learning is, and a noisy prior can't be shortcut-copied.
+- **Per-channel prior dropout at train time** (flatten / blur / dilate / drop, each plane independently) keeps the pixel pathway alive, and the same knob buys robustness to the runtime rasterizer's cheaper approximation.
+- **Three-condition eval — full / degraded / FLAT prior — with the flat column as the gate:** fused-at-flat must not regress below pixels-only, because flat is exactly what canvas gets. No fused model ships on its full-prior number.
+
+Beyond canvas this buys two things: demoted pointer-only links become learnable again (the input finally carries the cursor bit — Phase 8's demotion becomes an experiment, not a permanent policy), and the keyboard plane is a CLASS hint pixels never had — textbox vs button stops being a border-pixel guess, so the starved classes are the predicted winners.
+
+Horizon, stated now so the channel work builds toward it: once affordance planes are input, the canvas endgame is predicting them as OUTPUT — a per-pixel "what actions does this region accept" head, supervised by DOM evidence where it exists, inferred from pixels where it isn't. Roles are bundled affordances anyway, and "click here, type there" is the more directly useful prediction inside a canvas than "this is a combobox".
+
 ## Architecture
 
 ```mermaid
