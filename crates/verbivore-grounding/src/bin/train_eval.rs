@@ -1,7 +1,7 @@
 //! The 2.9 driver: train on one harvested dataset, eval mAP@0.5 on another
 //! (ideally a different APP — held-out pages of the same app flatter the model).
 //!
-//!   cargo run -p verbivore-grounding --bin train-eval -- <train_dir> <heldout_dir> [epochs]
+//!   cargo run -p verbivore-grounding --bin train-eval -- <train_dir> <heldout_dir> [epochs] [seed]
 
 use verbivore_grounding::data::GroundingDataset;
 use verbivore_grounding::eval::evaluate_model;
@@ -14,11 +14,15 @@ fn main() -> anyhow::Result<()> {
     let train_dir = args.next().expect("train dataset dir");
     let heldout_dir = args.next().expect("heldout dataset dir");
     let epochs: usize = args.next().map(|a| a.parse()).transpose()?.unwrap_or(60);
+    // Seed drives backend init AND dataloader shuffle; the B.1 variance
+    // harness sweeps it to separate seed variance from wgpu nondeterminism.
+    let seed: u64 = args.next().map(|a| a.parse()).transpose()?.unwrap_or(42);
 
     let device = Default::default();
     let config = TrainConfig {
         epochs,
         batch_size: 8,
+        seed,
         checkpoint_dir: Some(std::path::PathBuf::from("target/train-eval-ckpt")),
         ..TrainConfig::default()
     };
