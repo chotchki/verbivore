@@ -120,3 +120,12 @@ MEASURED MOTIVATION (v4, 2026-07-23): +100 epochs and +18 deep-page samples repl
 - [x] 9.1 - v8 re-harvest through the 8.4 gate: wordpress 52 -> 128 CROSSED the fold floor (fold restored), metabase 56 -> 86 (halfway), dokuwiki 62 -> 63 and zengarden 82 -> 83 unmoved — those two are URL-starved not gate-starved (their evident links already passed; the fix is deeper discovery, backlogged). Corpus 2803 samples
 - [x] 9.2 - Rotation v8, 9 folds, mean 0.087 (best yet; v6 0.076 was inflated by dishonest wordpress labels): wordpress back at 0.283 (button 0.652), bootstrap 0.172 (link 0.264), gitea recovered 0.089 (link 0.180, 12-20px stratum 0.380), superset link 0.198 with 8-12px at 0.691 — classically-styled link strata are now solidly learnable corpus-wide. CAUTION FLAG: mediawiki swung 0.000 -> 0.243 -> 0.083 across three near-identical trainings; single-run fold deltas at ±0.08 are a noisy instrument — variance replication backlogged before crediting future levers
 
+---
+
+## 2026-07-26
+
+## Phase B - Error bars (fold-variance replication)
+added 2026-07-25.
+- [x] B.1 - Replication harness on the FROZEN v8 corpus, 3 folds x seeds 42/43/44: training is BIT-REPRODUCIBLE at fixed seed (seed-42 reruns matched the v8 rotation to the third decimal incl. per-class APs — zero wgpu/Metal nondeterminism), so ALL swing is init/shuffle seed variance, and it's fold-dependent: mediawiki mAP range 0.013 [0.060-0.073], gitea 0.047 [0.054-0.101], ghost 0.100 [0.041-0.141]; link-AP ranges 0.065-0.087 everywhere. Verdict: ghost/gitea v7->v8 fold deltas were inside noise; mediawiki's tight band says its v7 0.153 was a real corpus-composition effect, not seed luck
+- [x] B.2 - Decision rule shipped in rotate.sh: optional seeds arg ("42 43 44"), per-fold per-seed logs, summary prints mAP mean/range/[min,max]/n per fold with the credit rule in the header — judge levers on seed-MEAN deltas, a single-seed fold delta inside that fold's seed range is noise. Single-seed default stays for smoke runs
+

@@ -1,4 +1,4 @@
-<!-- plan-bridge:phase-high-water=A -->
+<!-- plan-bridge:phase-high-water=C -->
 # PLAN
 
 Vision-assisted verbs for browser testing — [SPEC.md](SPEC.md) owns the what and why. Phases: harvest → ground → validate → execute → generate, canvas and friends live in the backlog until v1 ships.
@@ -18,10 +18,6 @@ This PLAN.md is driven by `claude-plan-bridge` (FORMATv2):
 - `claude-plan-bridge status` reports state-file health if something
   looks wrong.
 -->
-## Phase B - Error bars (fold-variance replication)
-added 2026-07-25.
-- [ ] B.1 - Replication harness on the FROZEN v8 corpus: re-run 3 swingy folds (mediawiki, ghost, gitea) N=4 each; first determine what actually varies between runs (wgpu nondeterminism vs seed vs data order — TrainConfig may need an explicit seed knob) and report per-fold stddev + range
-- [ ] B.2 - Decision rule from the bands: define the minimum single-fold and mean delta worth crediting, write it into the rotation summary output so every future lever is judged against it automatically
 ## Phase C - Affordance fusion (DOM as input prior)
 - [ ] C.1 - Affordance evidence harvest: collect VECTOR evidence in sidecars (rect + channel kind + specificity weight), rasterize at batch time so channel design iterates without re-harvest. Sources: heuristic scan (cursor roots, tabindex, anchors, onclick), CDP DOMDebugger.getEventListeners for real listener geometry split pointer/keyboard/wheel, native tags + contenteditable; document/window-scoped handlers recorded as AMBIENT entries. NEVER from the a11y tree — a11y is the label source, and prior must be free to disagree with labels or the model shortcut-copies it
 - [ ] C.2 - Rasterizer + model plumbing: three planes (pointer, keyboard/text, drag-scroll) concatenated onto RGB, letterbox-consistent; heat = evidence weight / region specificity, so delegation roots, global key handlers and canvas all render as the same low uniform glow — one rule, no special cases
