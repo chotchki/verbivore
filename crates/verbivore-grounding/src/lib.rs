@@ -2,6 +2,7 @@
 //! Burn detector, trained from scratch on harvested data; runs at authoring/repair
 //! time, never in the runtime loop (canvas verbs are the one exception).
 
+pub mod augment;
 pub mod data;
 pub mod decode;
 pub mod eval;

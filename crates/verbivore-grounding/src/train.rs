@@ -67,6 +67,9 @@ pub fn train<B: AutodiffBackend>(
 
     let grid = INPUT_SIZE as usize / crate::model::OUTPUT_STRIDE;
     let mut history = Vec::with_capacity(config.epochs);
+    // C.3 prior-dropout rng: seeded off the training seed, advanced across
+    // epochs — deterministic (bit-reproducibility survives), varied per batch.
+    let mut aug_rng = config.seed ^ 0x9E37_79B9_7F4A_7C15;
 
     for epoch in 1..=config.epochs {
         let started = Instant::now();
@@ -76,7 +79,8 @@ pub fn train<B: AutodiffBackend>(
         for batch in loader.iter() {
             let targets =
                 build_targets::<B>(&batch.boxes, &batch.classes, &batch.ignore, grid, device);
-            let pred = model.forward(batch.images);
+            let images = crate::augment::degrade_prior(batch.images, &mut aug_rng);
+            let pred = model.forward(images);
             let loss = detection_loss(&pred, &targets);
             loss_sum += loss.clone().into_scalar().elem::<f64>();
             batches += 1;

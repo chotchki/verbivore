@@ -14,7 +14,8 @@ fn forward_produces_stride4_heads() {
 
     let side = INPUT_SIZE as usize;
     let grid = side / OUTPUT_STRIDE;
-    let images = Tensor::<B, 4>::zeros([2, 3, side, side], &device);
+    // 6 channels: rgb + the 3 affordance prior planes (C.2 fusion).
+    let images = Tensor::<B, 4>::zeros([2, 6, side, side], &device);
     let out = model.forward(images);
 
     assert_eq!(out.heatmap.dims(), [2, NUM_CLASSES, grid, grid]);
