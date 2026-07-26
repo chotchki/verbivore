@@ -85,7 +85,9 @@ fn source_weight(source: AffordanceSource) -> f32 {
 
 /// Rasterizes vector evidence into the 3 prior planes: additive heat,
 /// heat = source weight * min(1, A0/area), clamped to 1.0 per cell.
-fn rasterize_prior(evidence: &[AffordanceEvidence], lb: &Letterbox) -> Vec<f32> {
+/// Pub because it IS the runtime rasterizer too (C.6) — harvest and
+/// inference share one code path by construction.
+pub fn rasterize_prior(evidence: &[AffordanceEvidence], lb: &Letterbox) -> Vec<f32> {
     let side = INPUT_SIZE as usize;
     let plane = side * side;
     let mut prior = vec![0.0f32; 3 * plane];
