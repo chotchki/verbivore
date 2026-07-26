@@ -132,7 +132,8 @@ pub struct GroundingModel<B: Backend> {
 impl<B: Backend> GroundingModel<B> {
     pub fn init(device: &B::Device) -> Self {
         Self {
-            stem: conv_block(3, 32, 2, device),      // 320
+            // 6 in: rgb + the 3 affordance prior planes (C.2 fusion).
+            stem: conv_block(6, 32, 2, device),      // 320
             stage1: conv_block(32, 32, 1, device),
             down1: conv_block(32, 64, 2, device),    // 160
             stage2: conv_block(64, 64, 1, device),

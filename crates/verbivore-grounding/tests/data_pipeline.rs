@@ -1,6 +1,8 @@
 use image::{DynamicImage, RgbImage};
 use std::io::Cursor;
-use verbivore_dataset::{Bbox, Dataset, ElementLabel};
+use verbivore_dataset::{
+    AffordanceChannel, AffordanceEvidence, AffordanceSource, Bbox, Dataset, ElementLabel,
+};
 use verbivore_grounding::data::{
     GroundingBatch, GroundingBatcher, GroundingDataset, INPUT_SIZE, Letterbox,
 };
@@ -107,6 +109,55 @@ fn cached_open_returns_identical_items() -> anyhow::Result<()> {
 }
 
 #[test]
+fn rasterizes_affordance_planes_with_specificity_dilution() -> anyhow::Result<()> {
+    let dir = tempfile::tempdir()?;
+    let ds = Dataset::create(dir.path())?;
+    let ev = |x, y, w, h, channel, source| AffordanceEvidence {
+        bbox: Bbox { x, y, w, h },
+        channel,
+        source,
+    };
+    // 200x100 page -> scale 3.2, pad_y 160 (see letterbox test above).
+    ds.add(
+        "http://fixture/",
+        200,
+        100,
+        1.0,
+        vec![label("button", 50.0, 25.0, 100.0, 50.0)],
+        Vec::new(),
+        vec![
+            // Element-sized: 10x10 css = 32x32 input = exactly A0 -> full weight.
+            ev(10.0, 10.0, 10.0, 10.0, AffordanceChannel::Keyboard, AffordanceSource::Listener),
+            // Big rect: 320x160 input -> diluted to 1024/51200 = 0.02.
+            ev(50.0, 25.0, 100.0, 50.0, AffordanceChannel::Pointer, AffordanceSource::Listener),
+            // Ambient over the whole page: the faint everywhere-glow.
+            ev(0.0, 0.0, 200.0, 100.0, AffordanceChannel::Scroll, AffordanceSource::Ambient),
+        ],
+        &png(200, 100, [255, 0, 0]),
+    )?;
+
+    let gd = GroundingDataset::open(dir.path())?;
+    use burn::data::dataset::Dataset as BurnDataset;
+    let item = BurnDataset::get(&gd, 0).unwrap();
+    let side = INPUT_SIZE as usize;
+    let plane = side * side;
+    let at = |ch: usize, x: usize, y: usize| item.prior[ch * plane + y * side + x];
+
+    // Keyboard plane: full weight inside the element-sized rect.
+    assert!((at(1, 48, 208) - 1.0).abs() < 1e-4, "element-sized heat: {}", at(1, 48, 208));
+    // Pointer plane: specificity-diluted inside the big rect.
+    let big = at(0, 320, 320);
+    assert!((big - 0.02).abs() < 0.005, "diluted heat: {big}");
+    // Scroll plane: ambient renders as a glow — present, faint.
+    let glow = at(2, 320, 320);
+    assert!(glow > 0.001 && glow < 0.02, "ambient glow: {glow}");
+    // Where there is no evidence, the prior is exactly zero.
+    assert_eq!(at(0, 5, 5), 0.0);
+    assert_eq!(at(1, 320, 320), 0.0);
+    Ok(())
+}
+
+#[test]
 fn batcher_stacks_images_and_keeps_targets_ragged() -> anyhow::Result<()> {
     let dir = tempfile::tempdir()?;
     let ds = Dataset::create(dir.path())?;
@@ -145,7 +196,7 @@ fn batcher_stacks_images_and_keeps_targets_ragged() -> anyhow::Result<()> {
 
     assert_eq!(
         batch.images.dims(),
-        [2, 3, INPUT_SIZE as usize, INPUT_SIZE as usize]
+        [2, 6, INPUT_SIZE as usize, INPUT_SIZE as usize]
     );
     let counts: Vec<usize> = batch.classes.iter().map(Vec::len).collect();
     assert_eq!(counts.iter().sum::<usize>(), 3);

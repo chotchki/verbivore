@@ -6,7 +6,10 @@ use burn::data::dataloader::batcher::Batcher;
 use burn::prelude::{Backend, Tensor, TensorData};
 use image::RgbImage;
 use std::path::Path;
-use verbivore_dataset::{Bbox, Dataset as DiskDataset, SampleMeta, role_to_class};
+use verbivore_dataset::{
+    AffordanceChannel, AffordanceEvidence, AffordanceSource, Bbox, Dataset as DiskDataset,
+    SampleMeta, role_to_class,
+};
 
 /// Detector input edge. Everything renders into a square this size.
 pub const INPUT_SIZE: u32 = 640;
@@ -48,12 +51,69 @@ impl Letterbox {
 pub struct GroundingItem {
     /// 3 * INPUT_SIZE * INPUT_SIZE, CHW, [0,1].
     pub image: Vec<f32>,
+    /// C.2 affordance prior: 3 * INPUT_SIZE * INPUT_SIZE, CHW, [0,1] —
+    /// planes in [`AffordanceChannel`] order (pointer, keyboard, scroll).
+    /// All-zero = flat prior = the canvas condition.
+    pub prior: Vec<f32>,
     /// xyxy in input px, parallel to `classes`.
     pub boxes: Vec<[f32; 4]>,
     pub classes: Vec<i64>,
     /// xyxy in input px: looks-interactive-but-unlabeled regions. The loss
     /// must not teach these as background.
     pub ignore: Vec<[f32; 4]>,
+}
+
+/// Reference "element-sized" area in input px² — the specificity pivot. An
+/// evidence rect at or below this area contributes its full source weight;
+/// bigger rects dilute as A0/area, so a delegation root or ambient handler
+/// spread over the page renders as a faint glow. One rule, no special cases.
+const REFERENCE_AREA: f32 = 32.0 * 32.0;
+
+/// How much a source is worth before specificity dilution. Real listener
+/// geometry outranks declarative hints; a bare tabindex is the weakest
+/// tell. Ambient gets full weight — its viewport-sized area does the
+/// diluting.
+fn source_weight(source: AffordanceSource) -> f32 {
+    match source {
+        AffordanceSource::Listener | AffordanceSource::Ambient => 1.0,
+        AffordanceSource::NativeTag => 0.9,
+        AffordanceSource::CursorPointer => 0.8,
+        AffordanceSource::Scrollable => 0.7,
+        AffordanceSource::Tabindex => 0.5,
+    }
+}
+
+/// Rasterizes vector evidence into the 3 prior planes: additive heat,
+/// heat = source weight * min(1, A0/area), clamped to 1.0 per cell.
+fn rasterize_prior(evidence: &[AffordanceEvidence], lb: &Letterbox) -> Vec<f32> {
+    let side = INPUT_SIZE as usize;
+    let plane = side * side;
+    let mut prior = vec![0.0f32; 3 * plane];
+    for e in evidence {
+        let [x0, y0, x1, y1] = lb.apply(e.bbox);
+        let (x0, y0) = (x0.max(0.0) as usize, y0.max(0.0) as usize);
+        let (x1, y1) = (
+            (x1.min(side as f32) as usize).max(x0),
+            (y1.min(side as f32) as usize).max(y0),
+        );
+        let area = ((x1 - x0) * (y1 - y0)) as f32;
+        if area < 1.0 {
+            continue;
+        }
+        let heat = source_weight(e.source) * (REFERENCE_AREA / area).min(1.0);
+        let ch = match e.channel {
+            AffordanceChannel::Pointer => 0,
+            AffordanceChannel::Keyboard => 1,
+            AffordanceChannel::Scroll => 2,
+        };
+        for y in y0..y1 {
+            let row = ch * plane + y * side;
+            for x in x0..x1 {
+                prior[row + x] = (prior[row + x] + heat).min(1.0);
+            }
+        }
+    }
+    prior
 }
 
 /// Burn-facing view of a harvested dataset directory.
@@ -75,9 +135,9 @@ impl GroundingDataset {
     }
 
     /// Caches decoded items in memory after first touch: png decode dominates
-    /// epoch time otherwise (5x on real screenshots). Costs ~4.9MB per sample
-    /// resident (3 * 640 * 640 f32) — right for training on a big-RAM box,
-    /// wrong for streaming; pick per call site.
+    /// epoch time otherwise (5x on real screenshots). Costs ~9.8MB per sample
+    /// resident (6 * 640 * 640 f32 — rgb + prior planes) — right for training
+    /// on a big-RAM box, wrong for streaming; pick per call site.
     pub fn open_cached(root: impl AsRef<Path>) -> Result<Self> {
         let mut ds = Self::open(root)?;
         ds.cache = Some((0..ds.ids.len()).map(|_| std::sync::OnceLock::new()).collect());
@@ -133,6 +193,7 @@ fn item_from_parts(img: &RgbImage, meta: &SampleMeta) -> GroundingItem {
     }
     GroundingItem {
         image: image_buf,
+        prior: rasterize_prior(&meta.affordance, &lb),
         boxes,
         classes,
         ignore: meta.ignore.iter().map(|b| lb.apply(*b)).collect(),
@@ -175,17 +236,20 @@ impl<B: Backend> Batcher<B, GroundingItem, GroundingBatch<B>> for GroundingBatch
     fn batch(&self, items: Vec<GroundingItem>, device: &B::Device) -> GroundingBatch<B> {
         let n = items.len();
         let side = INPUT_SIZE as usize;
-        let mut flat = Vec::with_capacity(n * 3 * side * side);
+        // 6 channels: rgb then the 3 affordance planes. Fusing here keeps
+        // the model's forward signature (and every call site) unchanged.
+        let mut flat = Vec::with_capacity(n * 6 * side * side);
         let mut boxes = Vec::with_capacity(n);
         let mut classes = Vec::with_capacity(n);
         let mut ignore = Vec::with_capacity(n);
         for item in items {
             flat.extend_from_slice(&item.image);
+            flat.extend_from_slice(&item.prior);
             boxes.push(item.boxes);
             classes.push(item.classes);
             ignore.push(item.ignore);
         }
-        let images = Tensor::from_data(TensorData::new(flat, [n, 3, side, side]), device);
+        let images = Tensor::from_data(TensorData::new(flat, [n, 6, side, side]), device);
         GroundingBatch {
             images,
             boxes,
