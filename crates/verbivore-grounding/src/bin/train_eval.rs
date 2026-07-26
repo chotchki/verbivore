@@ -4,7 +4,7 @@
 //!   cargo run -p verbivore-grounding --bin train-eval -- <train_dir> <heldout_dir> [epochs] [seed]
 
 use verbivore_grounding::data::GroundingDataset;
-use verbivore_grounding::eval::evaluate_model;
+use verbivore_grounding::eval::{PriorCondition, evaluate_model, evaluate_model_under};
 use verbivore_grounding::train::{TrainConfig, train, valid_model};
 
 type AB = burn::backend::Autodiff<burn::backend::Wgpu>;
@@ -42,6 +42,20 @@ fn main() -> anyhow::Result<()> {
                 println!("  {role:8} h[{lo:>4.0},{hi:>4.0})px gt={gt:5} ap={ap:.3}");
             }
         }
+    }
+    // C.4 three-condition protocol: flat is the canvas condition AND the
+    // shipping gate (must not regress below the pixels-only baseline).
+    // Full stays LAST — rotate.sh extracts the summary from the tail line.
+    for (name, condition) in [
+        ("flat", PriorCondition::Flat),
+        ("degraded", PriorCondition::Degraded { seed: seed ^ 0xC4 }),
+    ] {
+        let c = evaluate_model_under(&model, &heldout, &device, condition);
+        println!(
+            "heldout[{name}]: mAP@0.5={:.3} matched-IoU={:.3}",
+            c.map50(),
+            c.mean_matched_iou()
+        );
     }
     println!(
         "heldout: mAP@0.5={:.3} matched-IoU={:.3}",

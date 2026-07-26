@@ -14,24 +14,63 @@ pub fn eval_decode_config() -> crate::decode::DecodeConfig {
     }
 }
 
+/// What the affordance prior looks like at eval time — the C.4 protocol.
+/// `Flat` is the canvas condition and the SHIPPING gate: a fused model must
+/// not score below the pixels-only baseline with its prior zeroed, or it
+/// learned to copy the prior instead of reading pixels.
+#[derive(Debug, Clone, Copy)]
+pub enum PriorCondition {
+    Full,
+    /// Deterministically degraded via the C.3 augmentation — the
+    /// runtime-approximation condition.
+    Degraded { seed: u64 },
+    Flat,
+}
+
 /// Runs a model over a whole dataset and returns the filled accumulator.
+/// Evaluates under the full prior; the three-condition protocol goes
+/// through [`evaluate_model_under`].
 pub fn evaluate_model<B: burn::prelude::Backend>(
     model: &crate::model::GroundingModel<B>,
     dataset: &crate::data::GroundingDataset,
     device: &burn::prelude::Device<B>,
+) -> EvalAccumulator {
+    evaluate_model_under(model, dataset, device, PriorCondition::Full)
+}
+
+/// [`evaluate_model`] with the prior planes as-is, degraded or zeroed.
+pub fn evaluate_model_under<B: burn::prelude::Backend>(
+    model: &crate::model::GroundingModel<B>,
+    dataset: &crate::data::GroundingDataset,
+    device: &burn::prelude::Device<B>,
+    condition: PriorCondition,
 ) -> EvalAccumulator {
     use burn::data::dataloader::batcher::Batcher;
     use burn::data::dataset::Dataset as BurnDataset;
     let cfg = eval_decode_config();
     let mut acc = EvalAccumulator::default();
     let mut buffered = Vec::new();
-    let flush = |items: &mut Vec<crate::data::GroundingItem>, acc: &mut EvalAccumulator| {
+    let mut rng = match condition {
+        PriorCondition::Degraded { seed } => seed,
+        _ => 0,
+    };
+    let mut flush = |items: &mut Vec<crate::data::GroundingItem>, acc: &mut EvalAccumulator| {
         if items.is_empty() {
             return;
         }
+        let mut items = std::mem::take(items);
+        if matches!(condition, PriorCondition::Flat) {
+            for item in &mut items {
+                item.prior.iter_mut().for_each(|v| *v = 0.0);
+            }
+        }
         let batch: crate::data::GroundingBatch<B> =
-            crate::data::GroundingBatcher.batch(std::mem::take(items), device);
-        let dets = crate::decode::decode(&model.forward(batch.images), &cfg);
+            crate::data::GroundingBatcher.batch(items, device);
+        let images = match condition {
+            PriorCondition::Degraded { .. } => crate::augment::degrade_prior(batch.images, &mut rng),
+            _ => batch.images,
+        };
+        let dets = crate::decode::decode(&model.forward(images), &cfg);
         for ((dets, gt_boxes), gt_classes) in dets.iter().zip(&batch.boxes).zip(&batch.classes) {
             acc.observe(dets, gt_boxes, gt_classes);
         }
