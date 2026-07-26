@@ -23,6 +23,7 @@ async fn harvested_snapshot_survives_the_dataset_round_trip() -> anyhow::Result<
         1.0,
         snap.labels.clone(),
         snap.ignore.clone(),
+        snap.affordance.clone(),
         &snap.screenshot_png,
     )?;
     assert!(!out.deduped);

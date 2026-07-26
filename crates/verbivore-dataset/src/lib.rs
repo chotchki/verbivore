@@ -95,6 +95,46 @@ pub struct ElementLabel {
     pub name: Option<String>,
 }
 
+/// The action modality a piece of affordance evidence speaks for — the
+/// planes mirror the EXECUTOR's action space (click / type / drag-scroll),
+/// not the DOM's event taxonomy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AffordanceChannel {
+    Pointer,
+    Keyboard,
+    Scroll,
+}
+
+/// Where a piece of evidence came from. Provenance for debugging AND the
+/// rasterizer's per-source weights — a real listener outweighs a bare
+/// tabindex. `Ambient` marks document/window-scoped handlers whose bbox is
+/// the whole viewport: real evidence with near-zero specificity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AffordanceSource {
+    Listener,
+    CursorPointer,
+    NativeTag,
+    Tabindex,
+    Scrollable,
+    Ambient,
+}
+
+/// One piece of DOM-derived interactivity evidence — VECTOR facts, not
+/// pixels: the rasterizer computes heat at batch time (heat = source weight
+/// / region specificity), so channel design iterates without re-harvest.
+/// NEVER sourced from the a11y tree: a11y is the label source, and the
+/// prior must be free to disagree with labels or the model shortcut-copies
+/// it (the C.1 rule).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AffordanceEvidence {
+    /// Screenshot px, same space as labels.
+    pub bbox: Bbox,
+    pub channel: AffordanceChannel,
+    pub source: AffordanceSource,
+}
+
 /// Sidecar metadata for one screenshot.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SampleMeta {
@@ -112,6 +152,11 @@ pub struct SampleMeta {
     /// pre-upgrade sidecar parseable.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ignore: Vec<Bbox>,
+    /// C.1 affordance evidence for the fusion input planes. Default keeps
+    /// pre-fusion sidecars parseable (they rasterize to flat priors, which
+    /// is also exactly the canvas condition — honest by accident).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub affordance: Vec<AffordanceEvidence>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -345,6 +390,7 @@ impl Dataset {
         dpr: f64,
         labels: Vec<ElementLabel>,
         ignore: Vec<Bbox>,
+        affordance: Vec<AffordanceEvidence>,
         png: &[u8],
     ) -> Result<AddOutcome> {
         let id = hex16(&Sha256::digest(png));
@@ -361,6 +407,7 @@ impl Dataset {
                 .unwrap_or(0),
             labels,
             ignore,
+            affordance,
         };
         if meta_path.exists() {
             // Same pixels, fresher labeling: the sidecar is the labeler's
@@ -471,6 +518,11 @@ mod tests {
             1.0,
             vec![label("button"), label("link")],
             Vec::new(),
+            vec![AffordanceEvidence {
+                bbox: Bbox { x: 5.0, y: 6.0, w: 40.0, h: 20.0 },
+                channel: AffordanceChannel::Keyboard,
+                source: AffordanceSource::Listener,
+            }],
             b"fake png bytes",
         )?;
         assert!(!out.deduped);
@@ -482,7 +534,22 @@ mod tests {
         assert_eq!(meta.url, "http://x/");
         assert_eq!(meta.labels.len(), 2);
         assert_eq!(meta.labels[0].bbox.w, 30.0);
+        assert_eq!(meta.affordance.len(), 1);
+        assert_eq!(meta.affordance[0].channel, AffordanceChannel::Keyboard);
+        assert_eq!(meta.affordance[0].source, AffordanceSource::Listener);
         assert!(ds.png_path(&out.id).exists());
+        Ok(())
+    }
+
+    #[test]
+    fn pre_fusion_sidecars_still_parse() -> Result<()> {
+        // A sidecar written before C.1 has no `affordance` field; it must
+        // read back as empty evidence (= flat prior, the canvas condition).
+        let json = br#"{"id":"abc","url":"http://x/","viewport_w":1280,
+            "viewport_h":800,"dpr":1.0,"captured_at_unix":0,
+            "labels":[],"ignore":[]}"#;
+        let meta: SampleMeta = serde_json::from_slice(json)?;
+        assert!(meta.affordance.is_empty());
         Ok(())
     }
 
@@ -490,8 +557,8 @@ mod tests {
     fn dedupes_identical_screenshots() -> Result<()> {
         let dir = tempfile::tempdir()?;
         let ds = Dataset::create(dir.path())?;
-        let first = ds.add("http://a/", 1280, 800, 1.0, vec![label("button")], Vec::new(), b"same png")?;
-        let second = ds.add("http://b/", 1280, 800, 1.0, vec![label("link")], Vec::new(), b"same png")?;
+        let first = ds.add("http://a/", 1280, 800, 1.0, vec![label("button")], Vec::new(), Vec::new(), b"same png")?;
+        let second = ds.add("http://b/", 1280, 800, 1.0, vec![label("link")], Vec::new(), Vec::new(), b"same png")?;
         assert!(!first.deduped);
         assert!(second.deduped);
         assert_eq!(first.id, second.id);
@@ -574,9 +641,10 @@ mod tests {
             1.0,
             vec![label("button"), label("button"), label("link")],
             Vec::new(),
+            Vec::new(),
             b"png one",
         )?;
-        ds.add("http://y/", 1280, 800, 1.0, vec![label("tab")], Vec::new(), b"png two")?;
+        ds.add("http://y/", 1280, 800, 1.0, vec![label("tab")], Vec::new(), Vec::new(), b"png two")?;
         let stats = ds.stats()?;
         assert_eq!(stats.samples, 2);
         assert_eq!(stats.labels, 4);

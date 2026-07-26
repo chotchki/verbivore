@@ -51,6 +51,7 @@ fn overfits_two_synthetic_screenshots() -> anyhow::Result<()> {
                 name: None,
             }],
             Vec::new(),
+            Vec::new(),
             &rect_png(640, 640, rect),
         )?;
     }

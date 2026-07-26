@@ -1,6 +1,7 @@
 //! Drives Chrome via chromiumoxide to harvest auto-labeled training data: the DOM
 //! provides bounding boxes + roles at capture time so no human ever annotates.
 
+pub mod affordance;
 pub mod effect_capture;
 pub mod heuristics;
 pub mod input;
@@ -117,6 +118,9 @@ pub struct PageSnapshot {
     /// Fraction of the interactive-looking surface the labels cover; the
     /// density gate skips training pages below threshold.
     pub label_coverage: f64,
+    /// C.1 affordance evidence (screenshot px) — the fusion planes' raw
+    /// material, collected from listeners + declarative DOM, never a11y.
+    pub affordance: Vec<verbivore_dataset::AffordanceEvidence>,
 }
 
 /// Accessibility node cut down to what grounding needs; the full AXNode carries
@@ -197,6 +201,7 @@ impl Harvester {
                 variation.dpr,
                 snap.labels,
                 snap.ignore,
+                snap.affordance,
                 &snap.screenshot_png,
             )?;
             if added.deduped {
@@ -297,6 +302,8 @@ impl Harvester {
         let mut covering = labels.clone();
         covering.extend(demoted.iter().cloned());
         let scan = heuristics::scan(&page, &covering, variation.dpr).await?;
+        let affordance =
+            affordance::collect(&page, vw as f64, vh as f64, variation.dpr).await?;
         let ax_nodes = ax
             .result
             .nodes
@@ -318,6 +325,7 @@ impl Harvester {
             labels,
             label_coverage,
             ignore,
+            affordance,
         })
     }
 
