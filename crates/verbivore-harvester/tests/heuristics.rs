@@ -137,3 +137,29 @@ async fn demoted_link_farm_clears_the_density_gate() -> anyhow::Result<()> {
     assert!(masked >= 6, "all six demoted links must be ignore-masked: {:?}", snap.ignore);
     Ok(())
 }
+
+/// C.5 lever: with restore_pointer_links, the same link farm keeps every
+/// camouflaged link as a LABEL — nothing demotes, nothing masks, and the
+/// page still clears the gate (restored labels are covered surface too).
+#[tokio::test]
+async fn restore_lever_keeps_pointer_links_as_labels() -> anyhow::Result<()> {
+    let mut harvester = Harvester::launch().await?;
+    harvester.restore_pointer_links = true;
+    let snap = harvester.snapshot(LINK_FARM).await?;
+    harvester.close().await?;
+
+    let links = snap.labels.iter().filter(|l| l.role == "link").count();
+    assert_eq!(links, 6, "all six camouflaged links stay labeled: {:?}", snap.labels);
+    let masked = snap
+        .ignore
+        .iter()
+        .filter(|b| b.x >= 30.0 && b.x <= 100.0 && b.y >= 90.0 && b.y <= 340.0)
+        .count();
+    assert_eq!(masked, 0, "restored links must not double as ignore-masks: {:?}", snap.ignore);
+    assert!(
+        snap.label_coverage >= MIN_LABEL_COVERAGE,
+        "a restored-link page must clear the gate: {}",
+        snap.label_coverage
+    );
+    Ok(())
+}

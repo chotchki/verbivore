@@ -140,6 +140,11 @@ pub struct Harvester {
     /// FIXED path, so concurrent launches trip Chrome's singleton lock without
     /// a unique dir per instance.
     _profile_dir: tempfile::TempDir,
+    /// C.5 experiment lever: keep pointer-only links as LABELS instead of
+    /// demoting them to ignore. Off by default — 8.2 demotion is policy until
+    /// the relabel experiment shows the affordance prior makes camouflaged
+    /// links learnable. Their area still counts as covered either way.
+    pub restore_pointer_links: bool,
 }
 
 impl Harvester {
@@ -165,6 +170,7 @@ impl Harvester {
             browser,
             handler_task,
             _profile_dir: profile_dir,
+            restore_pointer_links: false,
         })
     }
 
@@ -297,8 +303,13 @@ impl Harvester {
         // a11y; counting it as missing rejected WordPress's 95%-pointer-only
         // pages wholesale (125 -> 52 samples in v7). Runtime resolution
         // (labels_on) is untouched.
-        let (labels, demoted) =
+        let (mut labels, mut demoted) =
             labels::demote_invisible_links(&page, labels, variation.dpr).await?;
+        // C.5 lever: restored links rejoin labels, so downstream (covering,
+        // ignore) sees an empty demotion — coverage accounting is identical.
+        if self.restore_pointer_links {
+            labels.append(&mut demoted);
+        }
         let mut covering = labels.clone();
         covering.extend(demoted.iter().cloned());
         let scan = heuristics::scan(&page, &covering, variation.dpr).await?;

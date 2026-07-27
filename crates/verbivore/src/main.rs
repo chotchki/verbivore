@@ -33,6 +33,10 @@ enum Cmd {
         /// Dataset root to create or extend
         #[arg(long)]
         dataset: PathBuf,
+        /// C.5 experiment lever: keep pointer-only links as labels instead
+        /// of demoting them to ignore-masks
+        #[arg(long)]
+        restore_pointer_links: bool,
         /// Pages to harvest
         urls: Vec<String>,
     },
@@ -191,9 +195,14 @@ async fn main() -> Result<()> {
         Cmd::DatasetStats { dir } => {
             print!("{}", Dataset::open(dir)?.stats()?);
         }
-        Cmd::Harvest { dataset, urls } => {
+        Cmd::Harvest {
+            dataset,
+            restore_pointer_links,
+            urls,
+        } => {
             let ds = Dataset::create(dataset)?;
-            let harvester = Harvester::launch().await?;
+            let mut harvester = Harvester::launch().await?;
+            harvester.restore_pointer_links = restore_pointer_links;
             let grid = Variation::default_grid();
             for url in &urls {
                 let outcome = harvester.harvest_variations(&ds, url, &grid).await?;

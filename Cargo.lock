@@ -7207,6 +7207,7 @@ dependencies = [
  "verbivore-dataset",
  "verbivore-effect",
  "verbivore-executor",
+ "verbivore-grounding",
  "verbivore-harvester",
  "verbivore-verb",
 ]
